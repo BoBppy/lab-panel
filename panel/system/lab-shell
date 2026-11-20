@@ -1,0 +1,3 @@
+#!/bin/sh
+# /usr/local/bin/lab-shell — sshd ForceCommand for members of group "labusers".
+exec sudo -n /usr/local/sbin/lab-enter

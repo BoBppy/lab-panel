@@ -1,0 +1,132 @@
+#!/usr/bin/env python3
+"""lab-ctl — lab admin CLI (same operations as the web panel).
+
+  lab-ctl adduser <name> [--key "<pubkey>"] [--password] [--memory 24g] [--cpus 8] [--gpu all|none]
+  lab-ctl deluser <name> [--purge]          remove account + container (--purge also deletes home and data dirs)
+  lab-ctl list                              users, container state, LLM usage today
+  lab-ctl passwd <name>                     set a password (prompts)
+  lab-ctl key list|add|rm <name> [<pubkey>|<index>]
+  lab-ctl set <name> [--memory 32g] [--cpus 8] [--gpu none] [--daily-tokens N] [--concurrency N] [--llm on|off]
+  lab-ctl disable|enable <name>
+  lab-ctl start|stop|restart|rebuild <name>|--all
+  lab-ctl llm-key <name> [--regen]          show (or regenerate) a user's LLM API key
+  lab-ctl usage [<name>] [--days 7]
+  lab-ctl build                             rebuild the devbox image (/opt/lab/devbox)
+  lab-ctl admin <name>                      create an admin for the web panel / reset its password
+"""
+import argparse
+import getpass
+import os
+import sys
+import time
+
+if os.geteuid() != 0:
+    os.execvp("sudo", ["sudo", sys.executable, os.path.realpath(__file__), *sys.argv[1:]])
+
+sys.path.insert(0, "/opt/lab/panel")
+import labcore as L  # noqa: E402
+
+
+def ask_pw(prompt="New password: "):
+    a = getpass.getpass(prompt)
+    if a != getpass.getpass("Again: "):
+        sys.exit("passwords differ")
+    return a
+
+
+def main():
+    if len(sys.argv) < 2 or sys.argv[1] in ("-h", "--help", "help"):
+        print(__doc__.strip())
+        return
+    cmd, rest = sys.argv[1], sys.argv[2:]
+    p = argparse.ArgumentParser(prog="lab-ctl " + cmd)
+    L.init_db()
+    if cmd == "adduser":
+        p.add_argument("name"); p.add_argument("--key"); p.add_argument("--password", action="store_true")
+        p.add_argument("--memory", default=""); p.add_argument("--cpus", default=""); p.add_argument("--gpu", default="")
+        p.add_argument("--full-name", default=""); p.add_argument("--email", default="")
+        a = p.parse_args(rest)
+        pw = ask_pw() if (a.password or not a.key) else None
+        L.add_user(a.name, password=pw, pubkey=a.key, full_name=a.full_name, email=a.email,
+                   memory=a.memory, cpus=a.cpus, gpu=a.gpu)
+        print(f"created {a.name}. ssh {a.name}@<server>  (the container is created on first login)")
+    elif cmd == "deluser":
+        p.add_argument("name"); p.add_argument("--purge", action="store_true")
+        a = p.parse_args(rest)
+        if a.purge and input(f"delete ALL files of {a.name}? type the name: ") != a.name:
+            sys.exit("aborted")
+        removed = L.delete_user(a.name, purge=a.purge)
+        print("removed", a.name, "and", ", ".join(removed) if removed else "(home and data kept)")
+    elif cmd == "list":
+        con = L.db()
+        print(f"{'USER':14} {'STATE':10} {'MEM':6} {'CPUS':5} {'GPU':4} {'LLM-TODAY':>10}  LAST-LOGIN")
+        for u in L.lab_members():
+            lim = L.effective_limits(u)
+            ll = L.last_login(u)
+            print(f"{u:14} {L.container_state(u):10} {lim['MEMORY'] or '-':6} {lim['CPUS'] or '-':5} {lim['GPU']:4} "
+                  f"{L.usage_today(con, u):>10,}  {time.strftime('%F %R', time.localtime(ll)) if ll else '-'}")
+    elif cmd == "passwd":
+        p.add_argument("name"); a = p.parse_args(rest)
+        L.set_password(a.name, ask_pw())
+        print("password set")
+    elif cmd == "key":
+        p.add_argument("op", choices=["list", "add", "rm"]); p.add_argument("name"); p.add_argument("arg", nargs="?")
+        a = p.parse_args(rest)
+        if a.op == "list":
+            for i, k in enumerate(L.list_keys(a.name)):
+                print(i, k[:80])
+        elif a.op == "add":
+            L.add_key(a.name, a.arg or sys.stdin.readline()); print("added")
+        else:
+            L.remove_key(a.name, int(a.arg)); print("removed")
+    elif cmd == "set":
+        p.add_argument("name"); p.add_argument("--memory"); p.add_argument("--cpus"); p.add_argument("--gpu")
+        p.add_argument("--daily-tokens", type=int); p.add_argument("--concurrency", type=int)
+        p.add_argument("--llm", choices=["on", "off"]); p.add_argument("--full-name"); p.add_argument("--email")
+        a = p.parse_args(rest)
+        note = L.update_user(a.name, memory=a.memory, cpus=a.cpus, gpu=a.gpu, daily_tokens=a.daily_tokens,
+                             concurrency=a.concurrency, llm_enabled=None if a.llm is None else int(a.llm == "on"),
+                             full_name=a.full_name, email=a.email)
+        print("updated", a.name, ("- " + note) if note else "")
+    elif cmd in ("disable", "enable"):
+        p.add_argument("name"); a = p.parse_args(rest)
+        L.set_disabled(a.name, cmd == "disable"); print(cmd + "d", a.name)
+    elif cmd in ("start", "stop", "restart", "rebuild"):
+        p.add_argument("names", nargs="+"); a = p.parse_args(rest)
+        names = L.lab_members() if a.names == ["--all"] else a.names
+        for n in names:
+            L.container_action(n, cmd)
+            print(f"lab-{n}: {cmd} done" + (" (recreated on next login)" if cmd == "rebuild" else ""))
+    elif cmd == "llm-key":
+        p.add_argument("name"); p.add_argument("--regen", action="store_true"); a = p.parse_args(rest)
+        L.require_lab_user(a.name); L.ensure_db_row(a.name)
+        print(L.new_llm_key(a.name) if a.regen else L.read_key(a.name))
+    elif cmd == "usage":
+        p.add_argument("name", nargs="?"); p.add_argument("--days", type=int, default=7); a = p.parse_args(rest)
+        con = L.db()
+        q = ("SELECT user, COUNT(*) n, SUM(prompt) p, SUM(completion) c, SUM(status>=400) err FROM usage WHERE ts>=?"
+             + (" AND user=?" if a.name else "") + " GROUP BY user ORDER BY p+c DESC")
+        rows = con.execute(q, (time.time() - a.days * 86400, *([a.name] if a.name else []))).fetchall()
+        print(f"last {a.days} days\n{'USER':14} {'REQUESTS':>9} {'PROMPT':>13} {'COMPLETION':>12} {'ERRORS':>7}")
+        for r in rows:
+            print(f"{r['user']:14} {r['n']:>9,} {r['p'] or 0:>13,} {r['c'] or 0:>12,} {r['err'] or 0:>7}")
+    elif cmd == "build":
+        args = []
+        if os.path.exists("/etc/lab/devbox.args"):          # optional KEY=value lines, e.g. package mirrors
+            for line in open("/etc/lab/devbox.args"):
+                if line.strip() and not line.lstrip().startswith("#"):
+                    args += ["--build-arg", line.strip()]
+        rt = L.runtime()
+        os.execvp(rt, [rt, "build", *args, "-t", "lab/devbox:latest", "/opt/lab/devbox"])
+    elif cmd == "admin":
+        p.add_argument("name"); a = p.parse_args(rest)
+        L.set_admin(a.name, ask_pw("Panel password for " + a.name + ": ")); print("admin saved")
+    else:
+        sys.exit(f"unknown command {cmd}; lab-ctl --help")
+
+
+if __name__ == "__main__":
+    try:
+        main()
+    except L.LabError as e:
+        sys.exit(f"lab-ctl: {e}")

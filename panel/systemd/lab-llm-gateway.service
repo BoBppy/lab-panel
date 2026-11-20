@@ -1,0 +1,23 @@
+[Unit]
+Description=Lab LLM gateway (per-user keys, quotas, usage) in front of the local engine
+After=network-online.target docker.service
+Wants=network-online.target
+
+[Service]
+User=labgw
+Group=labgw
+ExecStart=/usr/bin/python3 -I /opt/lab/panel/gateway.py
+Restart=always
+RestartSec=2
+Environment=PYTHONUNBUFFERED=1
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ReadWritePaths=/var/lib/lab
+CapabilityBoundingSet=
+LimitNOFILE=65536
+
+[Install]
+WantedBy=multi-user.target

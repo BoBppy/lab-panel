@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lab server</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%23173328'/%3E%3Cpath d='M5 23h22M8 23V13l8-5 8 5v10' stroke='%23E3B23C' stroke-width='2.4' fill='none' stroke-linejoin='round'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+<div id="login" class="login hidden">
+  <div class="login-art" aria-hidden="true"><svg viewBox="0 0 400 300" preserveAspectRatio="xMidYMid slice"><g fill="none" stroke="currentColor" stroke-width="1.2"><path d="M-10 230 C 80 200, 160 250, 410 190"/><path d="M-10 250 C 90 222, 170 268, 410 214"/><path d="M-10 270 C 100 244, 180 286, 410 238"/><path d="M-10 290 C 110 266, 190 304, 410 262"/><path d="M-10 210 C 70 178, 150 232, 410 166"/><path d="M-10 190 C 60 156, 140 214, 410 142"/></g></svg></div>
+  <form id="loginForm" class="login-card" autocomplete="on">
+    <div class="mark big"><svg viewBox="0 0 32 32" aria-hidden="true"><path d="M5 23h22M8 23V13l8-5 8 5v10" /></svg></div>
+    <h1>Lab</h1>
+    <p class="lede">Sign in to manage the GPU server.</p>
+    <label>Admin name<input name="user" autocomplete="username" required></label>
+    <label>Password<input name="password" type="password" autocomplete="current-password" required></label>
+    <label id="codeRow" class="hidden">Code from your authenticator app<input name="code" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9 ]{6,7}"></label>
+    <button class="btn primary wide" type="submit">Sign in</button>
+    <p class="err" id="loginErr" role="alert"></p>
+  </form>
+</div>
+
+<div id="app" class="shell hidden">
+  <aside class="side">
+    <div class="brand"><div class="mark"><svg viewBox="0 0 32 32" aria-hidden="true"><path d="M5 23h22M8 23V13l8-5 8 5v10" /></svg></div>
+      <div><b>Lab</b><span id="hostName">server</span></div></div>
+    <nav id="tabs" aria-label="Sections">
+      <button data-tab="overview" class="on"><svg viewBox="0 0 20 20"><path d="M3 15h14M5 15V9M10 15V5M15 15v-4"/></svg>Overview</button>
+      <button data-tab="users"><svg viewBox="0 0 20 20"><circle cx="10" cy="7" r="3"/><path d="M4 16c1-3 3.5-4.5 6-4.5s5 1.5 6 4.5"/></svg>People<span class="count" id="userCount"></span></button>
+      <button data-tab="llm"><svg viewBox="0 0 20 20"><path d="M4 5h12v8H9l-4 3v-3H4z"/></svg>Language model</button>
+      <button data-tab="audit"><svg viewBox="0 0 20 20"><path d="M5 3h10v14H5zM8 7h4M8 10h4M8 13h2"/></svg>Activity log</button>
+      <button data-tab="settings"><svg viewBox="0 0 20 20"><circle cx="10" cy="10" r="2.5"/><path d="M10 2.5v2.2M10 15.3v2.2M2.5 10h2.2M15.3 10h2.2M4.7 4.7l1.6 1.6M13.7 13.7l1.6 1.6M4.7 15.3l1.6-1.6M13.7 6.3l1.6-1.6"/></svg>Settings<span class="count" id="updCount"></span></button>
+    </nav>
+    <div class="side-foot"><span id="adminName"></span><button class="link" id="logoutBtn">Sign out</button></div>
+  </aside>
+
+  <main>
+    <section id="tab-overview">
+      <header class="page"><div><h1>Overview</h1><p class="lede" id="ovLede">Live readings, refreshed every five seconds.</p></div></header>
+      <div class="ledger" id="ledger"></div>
+      <div class="readings" id="tiles"></div>
+      <div class="split">
+        <div class="block"><div class="block-h"><h2>Language model</h2><span id="strataPill"></span></div><div id="strataBox"></div></div>
+        <div class="block"><div class="block-h"><h2>Disks</h2></div><div id="diskBox"></div></div>
+      </div>
+      <div class="block"><div class="block-h"><h2>Who is using what</h2></div><div class="table-wrap"><table id="usageTable"></table></div></div>
+    </section>
+
+    <section id="tab-users" class="hidden">
+      <header class="page"><div><h1>People</h1><p class="lede">Each person signs in with <code>ssh name@<span class="hostip"></span></code> and lands in their own container.</p></div>
+        <div class="page-actions"><input id="userFilter" class="search" placeholder="Find a person" aria-label="Find a person"><button class="btn primary" id="addUserBtn">Add person</button></div></header>
+      <div class="block flush"><div class="table-wrap"><table id="usersTable"></table></div></div>
+    </section>
+
+    <section id="tab-llm" class="hidden">
+      <header class="page"><div><h1>Language model</h1><p class="lede">The engine behind the lab's shared model, and how people use it.</p></div></header>
+      <div class="split">
+        <div class="block"><div class="block-h"><h2>Engine</h2><span id="strataPill2"></span></div><div id="strataDetail"></div>
+          <div class="actions"><button class="btn" data-strata="start">Start</button><button class="btn" data-strata="restart">Restart</button><button class="btn quiet-danger" data-strata="stop">Stop and free the GPU</button></div></div>
+        <div class="block"><div class="block-h"><h2>How to connect</h2></div><div id="gwBox"></div></div>
+      </div>
+      <div class="block"><div class="block-h"><h2>Engine settings</h2><div class="block-tools"><button class="btn sm" id="engReload">Discard edits</button><button class="btn sm" id="engVersions">Check for new versions</button></div></div>
+        <div id="engForm"></div><pre id="jobBox" class="joblog hidden" aria-live="polite"></pre></div>
+      <div class="block"><div class="block-h"><h2>Tokens per day</h2><span class="aside">last 30 days</span></div><div id="llmChart"></div></div>
+      <div class="block flush"><div class="block-h pad"><h2>By person</h2><span class="aside">last 30 days</span></div><div class="table-wrap"><table id="llmUsers"></table></div></div>
+      <div class="block flush"><div class="block-h pad"><h2>Recent requests</h2></div><div class="table-wrap tall"><table id="llmRecent"></table></div></div>
+    </section>
+
+    <section id="tab-settings" class="hidden">
+      <header class="page"><div><h1>Settings</h1><p class="lede">Your account, the people who run this panel, and the server's own software.</p></div></header>
+      <div class="split">
+        <div class="block"><div class="block-h"><h2>Your account</h2><span id="myRole"></span></div><div id="meBox"></div></div>
+        <div class="block"><div class="block-h"><h2>Server software</h2><button class="btn sm" id="updCheck">Check now</button></div><div id="updBox"></div><pre id="updLog" class="joblog hidden" aria-live="polite"></pre></div>
+      </div>
+      <div class="block flush"><div class="block-h pad"><h2>Panel admins</h2><button class="btn sm" id="addAdminBtn">Add admin</button></div><div class="table-wrap"><table id="adminsTable"></table></div></div>
+    </section>
+
+    <section id="tab-audit" class="hidden">
+      <header class="page"><div><h1>Activity log</h1><p class="lede">Every change made from this panel or with <code>lab-ctl</code>.</p></div></header>
+      <div class="block flush"><div class="table-wrap"><table id="auditTable"></table></div></div>
+    </section>
+  </main>
+</div>
+
+<dialog id="dlg"><div id="dlgBody"></div></dialog>
+<div id="toast" aria-live="polite"></div>
+<script src="app.js"></script>
+</body>
+</html>

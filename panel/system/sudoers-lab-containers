@@ -1,0 +1,3 @@
+# Members of labusers may only run the container entry wrapper as root (no args, no shell).
+Defaults!/usr/local/sbin/lab-enter env_keep += "SSH_ORIGINAL_COMMAND SSH_CONNECTION SSH_CLIENT TERM LANG", !use_pty
+%labusers ALL=(root) NOPASSWD: /usr/local/sbin/lab-enter ""

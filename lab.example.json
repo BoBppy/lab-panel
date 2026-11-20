@@ -1,0 +1,24 @@
+{
+  "org": "Physics Lab",
+
+  "panel_listen": "0.0.0.0", "panel_port": 39743,
+  "gateway_listen": "0.0.0.0", "gateway_port": 39700,
+  "strata_port": 39701,
+
+  "storage": [
+    {"path": "/home", "label": "System NVMe", "homes": "/home"},
+    {"path": "/ssd",  "label": "Data NVMe",   "homes": "/ssd/home", "data": "/ssd/data"},
+    {"path": "/hdd",  "label": "Hard disk",   "homes": "/hdd/home", "data": "/hdd/data"}
+  ],
+  "default_quota_gb": {"/home": 200, "/ssd": 300, "/hdd": 2000},
+  "container_fs": "",
+  "default_sudo": true,
+
+  "default_daily_tokens": 0,
+  "default_concurrency": 2,
+  "models_root": "/ssd/models",
+  "engine_state": "/ssd/engine",
+  "hf_cache": "/ssd/hf-cache",
+  "hf_endpoint": "",
+  "ghcr_mirror": ""
+}

@@ -1,0 +1,149 @@
+#!/bin/bash
+# /usr/local/sbin/lab-enter — runs as root via sudo from /usr/local/bin/lab-shell (sshd ForceCommand).
+# Ensures the calling user's container exists and is running, then execs the SSH session inside it.
+#   lab-enter            (from sshd) enter the container
+#   lab-enter --ensure   (from the panel / lab-ctl, SUDO_USER=<name>) only create/start it
+set -euo pipefail
+
+U="${SUDO_USER:-}"
+[[ "$U" =~ ^[a-z_][a-z0-9_-]{0,31}$ ]] || { echo "lab-enter: bad caller" >&2; exit 1; }
+id -nG "$U" | tr ' ' '\n' | grep -qx labusers || { echo "lab-enter: $U is not in group labusers" >&2; exit 1; }
+
+RUNTIME=docker
+# shellcheck source=/dev/null
+. /etc/lab/containers.conf
+case "$RUNTIME" in docker|podman) ;; *) echo "lab-enter: RUNTIME must be docker or podman" >&2; exit 1 ;; esac
+RT=$RUNTIME
+GPU=all
+CPUSET=
+SUDO_EFFECTIVE=yes
+DATA_MOUNTS=__default__
+# Per-user overrides written by the panel / lab-ctl (only MEMORY, CPUS, GPU; validated there, checked again here).
+if [ -f "/etc/lab/users/$U.conf" ]; then
+    while IFS='=' read -r k v; do
+        case "$k" in
+            MEMORY) [[ "$v" =~ ^[0-9]+[mg]$ ]] && MEMORY="$v" ;;
+            CPUS)   [[ "$v" =~ ^[0-9]+(\.[0-9]+)?$ ]] && CPUS="$v" ;;
+            GPU)    [[ "$v" =~ ^(all|none)$ ]] && GPU="$v" ;;
+            CPUSET) [[ "$v" =~ ^[0-9,-]+$ ]] && CPUSET="$v" ;;
+            SUDO_EFFECTIVE) [[ "$v" =~ ^(yes|no)$ ]] && SUDO_EFFECTIVE="$v" ;;
+            DATA_MOUNTS) [[ "$v" =~ ^[a-z0-9/_,-]*$ ]] && DATA_MOUNTS="$v" ;;
+        esac
+    done < "/etc/lab/users/$U.conf"
+fi
+
+C="lab-$U"
+UID_=$(id -u "$U"); GID_=$(id -g "$U")
+HOME_=$(getent passwd "$U" | cut -d: -f6)
+
+# Podman: the container gets host uids BASE..BASE+65535 (root inside = BASE, a uid that owns nothing).
+# Bind mounts are id-mapped for the person's own uid and gid only, so their files keep their real owner on
+# disk (quotas count them) and container root cannot create root-owned files there.
+ns=(); idm=""
+if [ "$RT" = podman ]; then
+    [ "$UID_" -ge 1000 ] && [ "$UID_" -lt 33768 ] || { echo "lab-enter: uid $UID_ outside the supported range" >&2; exit 1; }
+    BASE=$(( 0x80000000 + (UID_ - 1000) * 65536 ))
+    ns=(--uidmap "0:$BASE:65536" --gidmap "0:$BASE:65536" --init)
+    idm=":idmap=uids=@$UID_-$UID_-1;gids=@$GID_-$GID_-1"
+fi
+
+gpu_args() {
+    [ "$GPU" = none ] && return
+    if [ "$RT" = docker ]; then echo "--gpus all"; return; fi
+    # A lab-owned CDI spec without in-container hooks (they fail inside a user namespace; lab-init runs ldconfig).
+    local v; v=$(cat /sys/module/nvidia/version 2>/dev/null || echo none)
+    if [ ! -s /etc/cdi/lab-gpu.yaml ] || ! grep -q "$v" /etc/cdi/lab-gpu.yaml; then
+        nvidia-ctk cdi generate --vendor lab.local --class gpu --disable-hook all --enable-hook apply-cuda-memory-limits \
+            --output=/etc/cdi/lab-gpu.yaml >/dev/null 2>&1 || true
+    fi
+    [ -s /etc/cdi/lab-gpu.yaml ] && echo "--device lab.local/gpu=all"
+}
+
+create() {
+    local mounts=(-v "$HOME_:$HOME_$idm")
+    local d
+    if [ "$DATA_MOUNTS" = __default__ ]; then DATA_MOUNTS=""; fi   # lab-ctl/panel always write it
+    local IFS_=$IFS; IFS=','
+    local data=()
+    for d in $DATA_MOUNTS; do
+        # only <root>/<user> folders that exist and are owned by the user
+        [[ "$d" == */"$U" ]] && [ -d "$d" ] && [ "$(stat -c %U "$d")" = "$U" ] && mounts+=(-v "$d:$d$idm") && data+=("$d")
+    done
+    local data_label; data_label=$(printf '%s\n' "${data[@]}" | sort | paste -sd, -)
+    IFS=$IFS_
+    for d in "${SHARED_MOUNTS[@]}"; do
+        if [ -n "$idm" ]; then
+            if [[ "$d" == *:*:* ]]; then mounts+=(-v "$d,${idm#:}"); else mounts+=(-v "$d$idm"); fi
+        else mounts+=(-v "$d"); fi
+    done
+    if [ -d "/etc/lab/keys/$U" ]; then
+        if [ -n "$idm" ]; then mounts+=(-v "/etc/lab/keys/$U:/etc/lab/user:ro,${idm#:}"); else mounts+=(-v "/etc/lab/keys/$U:/etc/lab/user:ro"); fi
+    fi
+    local limits=(--shm-size "$SHM" --pids-limit "$PIDS")
+    [ -n "$MEMORY" ] && limits+=(--memory "$MEMORY" --memory-swap "$MEMORY")
+    [ -n "$CPUS" ]   && limits+=(--cpus "$CPUS")
+    [ -n "$CPUSET" ]  && limits+=(--cpuset-cpus "$CPUSET")
+    local gpu; read -r -a gpu <<< "$(gpu_args)"
+    # Thread-count hints so numpy/torch/make don't start 24 threads inside a 4-CPU limit.
+    local n=24
+    [ -n "$CPUS" ] && n=$(python3 -c "import math; print(max(1, math.ceil(float('$CPUS'))))")
+    if [ -n "$CPUSET" ]; then
+        local m; m=$(python3 -c "
+s='$CPUSET'; print(sum((int(b)-int(a)+1) if '-' in p else 1 for p in s.split(',') for a,_,b in [p.partition('-')]))")
+        [ "$m" -lt "$n" ] && n=$m
+    fi
+    local threads=()
+    [ "$n" -lt "$(nproc)" ] && threads=(-e OMP_NUM_THREADS=$n -e MKL_NUM_THREADS=$n -e OPENBLAS_NUM_THREADS=$n
+                                        -e NUMEXPR_MAX_THREADS=$n -e MAKEFLAGS=-j$n -e LAB_CPUS=$n)
+    # lxcfs: free/top/htop inside the container show the container's memory limit and CPU usage, not the host's.
+    local lx=()
+    if [ -r /var/lib/lxcfs/proc/meminfo ]; then
+        for f in meminfo cpuinfo stat uptime loadavg swaps diskstats; do lx+=(-v "/var/lib/lxcfs/proc/$f:/proc/$f:rw"); done
+    fi
+
+    local priv=(-e LAB_SUDO=1)
+    [ "$SUDO_EFFECTIVE" = no ] && priv=(-e LAB_SUDO=0 --security-opt no-new-privileges)
+    # --oom-score-adj 500: if the host runs out of memory, user processes are killed before the LLM engine.
+    "$RT" run -d --name "$C" --label lab.user="$U" --restart unless-stopped "${ns[@]}" \
+        --label lab.gpu="$GPU" --label lab.sudo="$SUDO_EFFECTIVE" --label lab.data="$data_label" \
+        "${gpu[@]}" --network host --cap-drop NET_RAW --oom-score-adj 500 "${priv[@]}" \
+        --ulimit memlock=-1:-1 "${limits[@]}" "${threads[@]}" "${lx[@]}" \
+        -e LAB_USER="$U" -e LAB_UID="$UID_" -e LAB_GID="$GID_" -e LAB_HOME="$HOME_" \
+        "${mounts[@]}" "$IMAGE" >/dev/null
+}
+
+if "$RT" container inspect "$C" >/dev/null 2>&1; then
+    state=$("$RT" container inspect -f '{{.State.Status}}' "$C")
+else
+    state=none
+fi
+case "$state" in
+    running) ;;
+    none)    [ "${1:-}" = --ensure ] || echo "[lab] creating your container $C (first login, a few seconds)..." >&2; create ;;
+    *)       "$RT" start "$C" >/dev/null ;;
+esac
+for _ in $(seq 1 100); do "$RT" exec "$C" test -e /run/lab-ready 2>/dev/null && break; sleep 0.2; done
+[ "${1:-}" = --ensure ] && exit 0
+
+mkdir -p /var/lib/lab/lastlogin && touch "/var/lib/lab/lastlogin/$U"
+
+# Fall back to a terminal type the container knows (e.g. xterm-ghostty, kitty are not in Ubuntu's terminfo).
+term="${TERM:-xterm-256color}"
+"$RT" exec "$C" infocmp "$term" >/dev/null 2>&1 || term=xterm-256color
+
+envs=(-e "HOME=$HOME_" -e "USER=$U" -e "LOGNAME=$U" -e "SHELL=/bin/bash"
+      -e "TERM=$term" -e "LANG=${LANG:-C.UTF-8}"
+      -e "SSH_CONNECTION=${SSH_CONNECTION:-}" -e "SSH_CLIENT=${SSH_CLIENT:-}")
+tty=(-i); [ -t 0 ] && [ -t 1 ] && tty=(-it)
+CMD="${SSH_ORIGINAL_COMMAND:-}"
+
+if [ -z "$CMD" ]; then
+    exec "$RT" exec "${tty[@]}" "${envs[@]}" -u "$U" -w "$HOME_" "$C" bash -l
+fi
+case "$CMD" in
+    # sftp subsystem: run it directly so no shell profile output can corrupt the stream.
+    /usr/lib/openssh/sftp-server*|internal-sftp*)
+        exec "$RT" exec -i "${envs[@]}" -u "$U" -w "$HOME_" "$C" /usr/lib/openssh/sftp-server ;;
+    *)
+        exec "$RT" exec "${tty[@]}" "${envs[@]}" -u "$U" -w "$HOME_" "$C" bash -lc "$CMD" ;;
+esac

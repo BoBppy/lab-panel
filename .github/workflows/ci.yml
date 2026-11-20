@@ -1,0 +1,21 @@
+name: checks
+on: [push, pull_request]
+jobs:
+  lint:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - uses: actions/setup-node@v4
+        with: { node-version: "22" }
+      - name: Python compiles
+        run: python -m py_compile panel/*.py && python -c "import ast; ast.parse(open('panel/lab-ctl').read())"
+      - name: JavaScript parses
+        run: node --check panel/static/app.js
+      - name: Shell scripts
+        run: |
+          sudo apt-get install -y -qq shellcheck
+          shellcheck -S error panel/*.sh panel/lab-enter panel/system/lab-shell scripts/*.sh devbox/*.sh devbox/lab-help devbox/apt-install
+      - name: Example config is valid JSON
+        run: python -m json.tool lab.example.json >/dev/null

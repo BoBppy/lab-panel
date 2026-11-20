@@ -1,0 +1,9 @@
+# Mainland China mirrors for the devbox build. Use:  sudo cp mirrors-cn.args /etc/lab/devbox.args
+APT_MIRROR=https://mirrors.tuna.tsinghua.edu.cn
+PIP_INDEX=https://pypi.tuna.tsinghua.edu.cn/simple
+GEM_SOURCE=https://mirrors.tuna.tsinghua.edu.cn/rubygems/
+NODE_DIST=https://cdn.npmmirror.com/binaries/node
+NPM_REGISTRY=https://registry.npmmirror.com
+RUSTUP_DIST_SERVER=https://mirrors.tuna.tsinghua.edu.cn/rustup
+RUSTUP_UPDATE_ROOT=https://mirrors.tuna.tsinghua.edu.cn/rustup/rustup
+CRATES_INDEX=sparse+https://mirrors.tuna.tsinghua.edu.cn/crates.io-index/

@@ -1,0 +1,9 @@
+#!/bin/sh
+# apt-install pkg... : apt-get install the packages that exist in this release, report the rest.
+set -e
+apt-get update -qq
+ok=""; for p in "$@"; do
+  if apt-cache show "$p" >/dev/null 2>&1; then ok="$ok $p"; else echo "apt-install: skipping unknown package $p" >&2; fi
+done
+echo "wireshark-common wireshark-common/install-setuid boolean false" | debconf-set-selections
+apt-get install -y --no-install-recommends $ok

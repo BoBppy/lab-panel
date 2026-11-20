@@ -1,0 +1,30 @@
+#!/bin/sh
+# lab-help: what this container offers
+u=$(id -un)
+home=${LAB_HOME:-$HOME}
+disks=$(findmnt -rno TARGET,FSTYPE | awk '$2 ~ /^(ext[234]|xfs|btrfs|zfs|nfs4?)$/ {print $1}' | grep -Ev '^/(etc|proc|sys|dev|run)(/|$)|^/$')
+data=$(echo "$disks" | grep "/${u}\$" | grep -vx "$home" | tr '\n' ' ')
+shared=$(echo "$disks" | grep -v "/${u}\$" | grep -vx "$home" | tr '\n' ' ')
+gpu=$(nvidia-smi --query-gpu=name,memory.total --format=csv,noheader 2>/dev/null | head -1)
+cat <<TXT
+Container lab-${u}
+
+Kept                   ${home} (home)  ${data:+ data: $data} ${shared:+ shared: $shared}
+Not kept               anything installed elsewhere (apt packages etc.) is lost when an admin rebuilds the container.
+GPU                    ${gpu:-none}, shared with others; check with nvidia-smi or nvitop.
+Admin rights           $( [ "${LAB_SUDO:-1}" = 1 ] && echo "yes (sudo, apt install)" || echo "no; pip, uv and conda still work")
+
+Python                 python = /opt/ai (PyTorch + CUDA, transformers, datasets, peft, trl, Jupyter, sklearn ...)
+                       /opt/sec/bin/python = security tools (pwntools, angr, z3, ROPgadget, scapy, impacket, volatility3)
+                       pip install works in both. Your own env: uv venv --system-site-packages
+Languages              gcc/clang/llvm, Go, Rust (cargo), Java 21 (maven), Node.js LTS
+Security               nmap (use -sT: no raw sockets), ncat, socat, sqlmap, nikto, ffuf, gobuster, hydra, john,
+                       hashcat (GPU), binwalk, radare2, gdb, checksec, one_gadget, qemu-user, yara, steghide ...
+Jupyter                jupyter lab --no-browser --port 8888   then on your PC: ssh -L 8888:localhost:8888 ${u}@<server>
+
+Language model ($LAB_LLM_MODEL)
+  OpenAI     base URL \$OPENAI_BASE_URL   key \$OPENAI_API_KEY
+  Anthropic  base URL \$ANTHROPIC_BASE_URL (Claude Code works: just run 'claude')
+  Codex      codex -m \$LAB_LLM_MODEL
+  Your usage curl -s -H "Authorization: Bearer \$OPENAI_API_KEY" \${OPENAI_BASE_URL%/v1}/lab/me
+TXT
