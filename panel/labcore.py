@@ -671,11 +671,12 @@ def set_quotas(name, q, actor="cli"):
             continue
         hard = int(gb * 1024 * 1024)                # 1K blocks
         run(["setquota", "-u", name, str(int(hard * 0.95)), str(hard), "0", "0", fs])
-        # Under Podman, packages installed inside the container belong to the container's own uids
-        # (its root and the person). They get the same limit on the disk that holds container files.
+        # Under Podman, files written by root inside the container belong to the container's base uid
+        # (on every disk it can reach), and packages the person installs inside the container belong to
+        # base + their uid (on the disk that holds container files). Each gets the same limit.
         base = userns_base(pwd.getpwnam(name).pw_uid)
-        if base is not None and fs == container_fs():
-            for u in (base, base + pwd.getpwnam(name).pw_uid):
+        if base is not None:
+            for u in (base, base + pwd.getpwnam(name).pw_uid) if fs == container_fs() else (base,):
                 run(["setquota", "-u", str(u), str(int(hard * 0.95)), str(hard), "0", "0", fs])
     if actor:
         audit(actor, "quota", name, q)

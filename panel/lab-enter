@@ -37,14 +37,14 @@ UID_=$(id -u "$U"); GID_=$(id -g "$U")
 HOME_=$(getent passwd "$U" | cut -d: -f6)
 
 # Podman: the container gets host uids BASE..BASE+65535 (root inside = BASE, a uid that owns nothing).
-# Bind mounts are id-mapped for the person's own uid and gid only, so their files keep their real owner on
-# disk (quotas count them) and container root cannot create root-owned files there.
+# Bind mounts are id-mapped: the person's own uid and gid keep their real owner on disk (quotas count them),
+# and root inside writes as BASE, so `sudo` works in the home folder without ever creating host-root files.
 ns=(); idm=""
 if [ "$RT" = podman ]; then
     [ "$UID_" -ge 1000 ] && [ "$UID_" -lt 33768 ] || { echo "lab-enter: uid $UID_ outside the supported range" >&2; exit 1; }
     BASE=$(( 0x80000000 + (UID_ - 1000) * 65536 ))
     ns=(--uidmap "0:$BASE:65536" --gidmap "0:$BASE:65536" --init)
-    idm=":idmap=uids=@$UID_-$UID_-1;gids=@$GID_-$GID_-1"
+    idm=":idmap=uids=@$UID_-$UID_-1#@$BASE-0-1;gids=@$GID_-$GID_-1#@$BASE-0-1"
 fi
 
 gpu_args() {

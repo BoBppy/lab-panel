@@ -15,7 +15,7 @@ It is built from the Python standard library, Podman, Docker and a few lines of 
 - Set limits per person: memory cap, CPU time, CPU pinning, GPU on/off, and admin rights inside the container. Limits are ceilings, not reservations: five people can each have a 64 GB cap on a 128 GB machine.
 - The container reports its own limits through lxcfs, so `nproc`, `free` and `htop` inside it show what the person actually has.
 - Rebuilding a container keeps the person's home and data folders.
-- Each container gets its own fixed range of 65,536 host uids, so its root is not the host's root and not any other person. Home and data folders are id-mapped for the person's own uid only: their files keep their real owner on disk, and root inside the container cannot plant root-owned files there.
+- Each container gets its own fixed range of 65,536 host uids, so its root is not the host's root and not any other person. Home and data folders are id-mapped: the person's files keep their real owner on disk, and files made with `sudo` belong to the container's own base uid, so nothing inside can create a file owned by host root.
 
 **Disks**
 - Describe your disks once in `/etc/lab/lab.json`. Per person you then choose where the home folder lives, which data disks are mounted, and how much they may fill on each.

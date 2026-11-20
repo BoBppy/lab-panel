@@ -7,7 +7,7 @@ lab-panel is meant for a research group: people who are trusted not to attack ea
 | | |
 |---|---|
 | Root inside | Under Podman (the default) each container runs in its own user namespace with a fixed range of 65,536 host uids. Root inside is host uid `2147483648 + (uid - 1000) * 65536`: it owns nothing on the host, and it is a different uid for every person. Someone who breaks out of a container lands as that uid, not as root and not as any other person. |
-| Files | Each container sees its own root filesystem plus that person's home and data folders and any shared folders. Other people's homes are not mounted. Mounts are id-mapped for the person's own uid and gid only, so their files keep their real owner on disk, while root inside the container cannot create files there at all (it gets `EOVERFLOW`). |
+| Files | Each container sees its own root filesystem plus that person's home and data folders and any shared folders. Other people's homes are not mounted. Mounts are id-mapped: the person's files keep their real owner on disk, and files created by root inside the container (with `sudo`) are owned on disk by the container's base uid, never by host root. |
 | Processes | Each container has its own PID namespace. `ps` shows only that person's processes. |
 | Memory, CPU, processes | cgroup limits per container. An out-of-memory kill stays inside the container, and the engine is protected with `--oom-score-adj -900`. |
 | Disk space | ext4 user quotas, enforced by the kernel on every write. |
