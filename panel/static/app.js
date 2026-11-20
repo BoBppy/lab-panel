@@ -6,6 +6,7 @@ const esc = (v) => String(v ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "
 const GiB = 1024 ** 3;
 const fmtB = (b) => b == null ? "–" : b >= 1024 ** 4 ? (b / 1024 ** 4).toFixed(2) + " TB" : b >= GiB ? (b / GiB).toFixed(b >= 100 * GiB ? 0 : 1) + " GB" : b >= 1024 ** 2 ? (b / 1024 ** 2).toFixed(0) + " MB" : b > 0 ? (b / 1024).toFixed(0) + " KB" : "0";
 const fmtN = (n) => n == null ? "–" : n >= 1e9 ? (n / 1e9).toFixed(2) + "B" : n >= 1e6 ? (n / 1e6).toFixed(2) + "M" : n >= 1e4 ? (n / 1e3).toFixed(1) + "k" : Math.round(n).toLocaleString();
+const hrs = (h) => !h ? "0 h" : h < 0.1 ? `${Math.round(h * 60)} min` : h < 10 ? `${h.toFixed(1)} h` : `${Math.round(h)} h`;
 const fmtT = (ts) => ts ? new Date(ts * 1000).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }) : "–";
 const ago = (ts) => { if (!ts) return "never"; const s = Date.now() / 1000 - ts; if (s < 90) return "just now"; if (s < 5400) return Math.round(s / 60) + " min ago"; if (s < 129600) return Math.round(s / 3600) + " h ago"; return Math.round(s / 86400) + " days ago"; };
 const memStr = (m) => { if (!m) return "no memory limit"; const n = parseInt(m); return (m.endsWith("g") ? n : (n / 1024).toFixed(1)) + " GB memory"; };
@@ -43,8 +44,9 @@ function spark(vals, max, color = "var(--p1)") {
   const d = pts.map((p, i) => (i ? "L" : "M") + p[0].toFixed(1) + " " + p[1].toFixed(1)).join(" ");
   return `<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" aria-hidden="true"><path d="${d} L${W} ${H} L0 ${H} Z" fill="${color}" opacity=".13"/><path d="${d}" fill="none" stroke="${color}" stroke-width="1.6" vector-effect="non-scaling-stroke"/></svg>`;
 }
-function bars(days, keys, colors, labels) {
-  if (!days.some((d) => keys.some((k) => d[k]))) return '<p class="empty" style="padding:4px 0">No requests in the last 30 days.</p>';
+function bars(days, keys, colors, labels, o = {}) {
+  const unit = o.unit ?? "tokens", fmt = o.fmt || fmtN;
+  if (!days.some((d) => keys.some((k) => d[k]))) return `<p class="empty" style="padding:4px 0">${esc(o.empty || "No requests in the last 30 days.")}</p>`;
   const W = 900, H = 170, pad = 30, bw = (W - pad) / days.length;
   const tot = days.map((d) => keys.reduce((s, k) => s + (d[k] || 0), 0)), m = Math.max(...tot, 1);
   let g = `<line x1="${pad}" x2="${W}" y1="${H - 18}" y2="${H - 18}" stroke="var(--rule)"/>`;
@@ -53,12 +55,12 @@ function bars(days, keys, colors, labels) {
     keys.forEach((k, j) => {
       const h = ((d[k] || 0) / m) * (H - 34);
       y -= h;
-      if (h > 0) g += `<rect x="${pad + i * bw + 2}" y="${y.toFixed(1)}" width="${Math.max(2, bw - 4).toFixed(1)}" height="${h.toFixed(1)}" fill="${colors[j]}" rx="1.5"><title>${esc(d.d)}: ${fmtN(d[k])} ${esc(labels[j])} tokens</title></rect>`;
+      if (h > 0) g += `<rect x="${pad + i * bw + 2}" y="${y.toFixed(1)}" width="${Math.max(2, bw - 4).toFixed(1)}" height="${h.toFixed(1)}" fill="${colors[j]}" rx="1.5"><title>${esc(d.d)}: ${fmt(d[k])} ${esc(labels[j])} ${esc(unit)}</title></rect>`;
     });
     if (i % 5 === 0 || i === days.length - 1) g += `<text x="${pad + i * bw + bw / 2}" y="${H - 3}" text-anchor="middle">${esc(new Date(d.d + "T00:00").toLocaleDateString([], { month: "short", day: "numeric" }))}</text>`;
   });
-  g += `<text x="0" y="12">${fmtN(m)}</text>`;
-  return `<svg viewBox="0 0 ${W} ${H}" style="width:100%;height:auto" role="img" aria-label="Tokens per day">${g}</svg><div class="legend">${labels.map((l, j) => `<span><i style="background:${colors[j]}"></i>${esc(l)}</span>`).join("")}</div>`;
+  g += `<text x="0" y="12">${fmt(m)}</text>`;
+  return `<svg viewBox="0 0 ${W} ${H}" style="width:100%;height:auto" role="img" aria-label="${esc(o.aria || "Tokens per day")}">${g}</svg><div class="legend">${labels.map((l, j) => `<span><i style="background:${colors[j]}"></i>${esc(l)}</span>`).join("")}</div>`;
 }
 function meter(used, total, label, note) {
   const p = total ? Math.min(100, (100 * used) / total) : 0;
@@ -203,13 +205,14 @@ function renderUsers() {
       <td class="num">${run ? ((c.cpu ?? 0) / 100).toFixed(1) : "–"}</td>
       <td class="num">${run ? fmtB(c.mem) : "–"}</td>
       <td class="num">${c.gpu_mib ? gb(c.gpu_mib) : "–"}</td>
+      <td class="num">${u.gpu_30d?.held_h ? `${hrs(u.gpu_30d.busy_h)} <span class="sub">of ${hrs(u.gpu_30d.held_h)}</span>` : "–"}</td>
       <td class="num">${dt != null ? fmtB(dt) : "…"}</td>
       <td class="sub">${esc(FSN[u.home_fs] || "")}</td>
       <td class="num">${u.llm_enabled ? fmtN(u.llm_today.prompt + u.llm_today.completion) + (u.daily_tokens ? ` <span class="sub">of ${fmtN(u.daily_tokens)}</span>` : "") : '<span class="sub">off</span>'}</td>
       <td>${ago(u.last_login)}</td></tr>`;
   });
-  $("#usersTable").innerHTML = `<thead><tr><th>Person</th><th>Container</th><th>Limits</th><th class="num">CPU cores</th><th class="num">Memory</th><th class="num">GPU memory</th><th class="num">Disk used</th><th>Home on</th><th class="num">Model tokens today</th><th>Last sign-in</th></tr></thead>
-    <tbody>${rows.join("") || `<tr><td colspan="10" class="empty">${USERS.length ? "Nobody matches that search." : "No accounts yet. Add the first person with “Add person”."}</td></tr>`}</tbody>`;
+  $("#usersTable").innerHTML = `<thead><tr><th>Person</th><th>Container</th><th>Limits</th><th class="num">CPU cores</th><th class="num">Memory</th><th class="num">GPU memory</th><th class="num" title="Hours the GPU spent computing for them, of the hours they held GPU memory, over 30 days">GPU time, 30 days</th><th class="num">Disk used</th><th>Home on</th><th class="num">Model tokens today</th><th>Last sign-in</th></tr></thead>
+    <tbody>${rows.join("") || `<tr><td colspan="11" class="empty">${USERS.length ? "Nobody matches that search." : "No accounts yet. Add the first person with “Add person”."}</td></tr>`}</tbody>`;
 }
 $("#userFilter").addEventListener("input", renderUsers);
 $("#usersTable").addEventListener("click", (e) => { const r = e.target.closest("tr[data-user]"); if (r) openUser(r.dataset.user); });
@@ -345,7 +348,9 @@ async function openUser(name, sub = "settings") {
         <div><button class="btn primary" type="submit">Save disk settings</button></div></form>
       <div class="part"><h3>Move the home folder</h3><p class="sub">Closes ${esc(name)}'s sessions, copies the folder, then removes the old copy.</p>
         <div class="inline"><select id="moveBase" aria-label="New location">${Object.entries(ME.home_bases || {}).filter(([k]) => !u.home.startsWith(k + "/")).map(([k, v]) => `<option value="${esc(k)}">${esc(v)}</option>`).join("")}</select><button class="btn" id="moveBtn">Move home folder</button></div><pre id="moveLog" class="joblog hidden"></pre></div>`,
-    usage: `<div class="part"><h3>Language model, last 30 days</h3>${bars(det.usage_days, ["p", "c"], ["var(--p3)", "var(--p1)"], ["prompt", "answer"])}</div>
+    usage: `<div class="part"><h3>GPU, last 30 days</h3>${bars(det.gpu_days, ["busy", "idle"], ["var(--p1)", "var(--p3)"], ["computing", "holding memory, idle"], { unit: "hours", fmt: hrs, empty: "No GPU use in the last 30 days.", aria: "GPU hours per day" })}
+        <p class="hint">Computing counts the share of the GPU their programs kept busy, so two hours at 50% is one hour. ${(() => { const p = Math.max(0, ...det.gpu_days.map((x) => x.peak_gib)); return p ? `Most GPU memory held at once: ${p} GB.` : ""; })()}</p></div>
+      <div class="part"><h3>Language model, last 30 days</h3>${bars(det.usage_days, ["p", "c"], ["var(--p3)", "var(--p1)"], ["prompt", "answer"])}</div>
       <div class="part"><h3>Container, last hour</h3><div class="form">
         <div><div class="hint">CPU, % of one core</div>${spark(det.history.map((r) => r[1]), null, "var(--p1)")}</div>
         <div><div class="hint">Memory</div>${spark(det.history.map((r) => r[2]), null, "var(--p3)")}</div>

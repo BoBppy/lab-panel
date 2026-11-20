@@ -28,6 +28,7 @@ It is built from the Python standard library, Podman, Docker and a few lines of 
 
 **Running the server**
 - Live CPU, memory, GPU and disk use, per person and in total.
+- GPU accounting per person and per day: hours their programs kept the GPU computing, hours they held GPU memory, and their peak memory.
 - An activity log of every change and sign-in.
 - Panel admins with roles (owner, admin, viewer) and optional two-factor sign-in (TOTP).
 - OS updates from the panel. GPU-driver and Docker updates are held for a planned restart.
@@ -69,6 +70,7 @@ sudoedit /etc/lab/lab.json                        # describe your disks (see lab
 sudo panel/storage-setup.sh                       # turn on per-person disk limits and lxcfs
 sudo lab-ctl build                                # build the container image (20-40 minutes)
 sudo scripts/harden.sh                            # optional, recommended: firewall, fail2ban, sshd, update policy
+sudo scripts/gpu-profiling.sh on                  # optional: GPU performance counters for everyone (after a reboot)
 ```
 
 Then open `https://<server>:39743`, sign in as `admin`, and add your first person.

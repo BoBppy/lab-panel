@@ -48,6 +48,9 @@ class Stats:
         self.strata = {}
         self._cpu_prev = None
         self._cg_prev = {}
+        self._gacc = {}                                      # (day, who) -> [held_s, busy_s, mem_mib_s, peak_mib]
+        self._gprev = None
+        self._gflush = time.time()
         threading.Thread(target=self.loop, daemon=True).start()
         threading.Thread(target=self.disk_loop, daemon=True).start()
 
@@ -82,25 +85,66 @@ class Stats:
         return {"name": p[0], "util": num(p[1]), "mem_used": num(p[2]), "mem_total": num(p[3]), "temp": num(p[4]),
                 "power": num(p[5]), "power_limit": num(p[6]), "fan": num(p[7]) if len(p) > 7 else None}
 
+    @staticmethod
+    def _owner(pid):
+        try:
+            m = re.search(r"(?:docker|libpod)-([0-9a-f]{64})\.scope", open(f"/proc/{pid}/cgroup").read())
+        except OSError:
+            return None
+        return m.group(1) if m else "host"
+
     def gpu_procs(self):
-        out = {}
+        """GPU memory (MiB) and compute share (% of the GPU's SMs) per container id."""
+        mem, sm = {}, {}
         for line in sh(["nvidia-smi", "--query-compute-apps=pid,used_memory", "--format=csv,noheader,nounits"]).splitlines():
             try:
                 pid, mib = [x.strip() for x in line.split(",")]
-                cg = open(f"/proc/{pid}/cgroup").read()
-                m = re.search(r"(?:docker|libpod)-([0-9a-f]{64})\.scope", cg)
-                key = m.group(1) if m else "host"
-                out[key] = out.get(key, 0) + float(mib)
-            except Exception:
+                key = self._owner(pid)
+                if key:
+                    mem[key] = mem.get(key, 0) + float(mib)
+            except ValueError:
                 continue
-        return out
+        # pmon samples per-process SM utilisation over about a second
+        for line in sh(["nvidia-smi", "pmon", "-c", "1", "-s", "u"], timeout=10).splitlines():
+            f = line.split()
+            if line.startswith("#") or len(f) < 4 or not f[1].isdigit() or not f[3].isdigit():
+                continue
+            key = self._owner(f[1])
+            if key:
+                sm[key] = min(100.0, sm.get(key, 0) + float(f[3]))
+        return mem, sm
+
+    def account_gpu(self, now):
+        """Add this interval's GPU use to the per-person daily totals; write them out once a minute."""
+        dt = min(15.0, now - self._gprev) if self._gprev else 0
+        self._gprev = now
+        day = time.strftime("%Y-%m-%d", time.localtime(now))
+        for name, c in self.cont.items():
+            if not (name.startswith("lab-") or name == "engine") or not c.get("gpu_mib"):
+                continue
+            who = name[4:] if name.startswith("lab-") else "(language model)"
+            a = self._gacc.setdefault((day, who), [0.0, 0.0, 0.0, 0.0])
+            a[0] += dt
+            a[1] += dt * c.get("gpu_sm", 0) / 100
+            a[2] += dt * c["gpu_mib"]
+            a[3] = max(a[3], c["gpu_mib"])
+        if now - self._gflush >= 60 and self._gacc:
+            acc, self._gacc, self._gflush = self._gacc, {}, now
+            con = L.db()
+            con.executemany(
+                "INSERT INTO gpu_usage(day, user, held_s, busy_s, mem_mib_s, peak_mib) VALUES(?,?,?,?,?,?) "
+                "ON CONFLICT(day, user) DO UPDATE SET held_s=held_s+excluded.held_s, busy_s=busy_s+excluded.busy_s, "
+                "mem_mib_s=mem_mib_s+excluded.mem_mib_s, peak_mib=max(peak_mib, excluded.peak_mib)",
+                [(d, w, *v) for (d, w), v in acc.items()])
+            con.commit()
+            con.close()
 
     def containers(self, now):
         fmt = "{{.ID}}\t{{.Names}}\t{{.State}}\t{{.Status}}\t{{.Image}}"
         rows = sh(["docker", "ps", "-a", "--no-trunc", "--format", fmt]).splitlines()
         if L.runtime() == "podman":
             rows = [r for r in rows if "\t" + E.NAME + "\t" in r] + sh(["podman", "ps", "-a", "--no-trunc", "--format", fmt]).splitlines()
-        gp = self.gpu_procs()
+        gp, gs = self.gpu_procs()
         res = {}
         for r in rows:
             p = r.split("\t")
@@ -112,7 +156,7 @@ class Stats:
             if name == E.NAME:
                 name = "engine"
             d = {"id": cid[:12], "state": state, "status": status, "image": image, "cpu": 0.0, "mem": 0, "mem_limit": 0,
-                 "pids": 0, "mem_anon": 0, "gpu_mib": gp.get(cid, 0.0)}
+                 "pids": 0, "mem_anon": 0, "gpu_mib": gp.get(cid, 0.0), "gpu_sm": gs.get(cid, 0.0)}
             base = next((b for b in (f"/sys/fs/cgroup/system.slice/docker-{cid}.scope",
                                      f"/sys/fs/cgroup/machine.slice/libpod-{cid}.scope") if os.path.isdir(b)), "")
             if state == "running" and base:
@@ -181,6 +225,7 @@ class Stats:
                     "disks": {p: self.df(p) for p in dict.fromkeys(("/",) + L.QUOTA_FS)},
                 }
                 self.cont = self.containers(now)
+                self.account_gpu(now)
                 self.strata = self.strata_status()
                 self.hist.append((round(now), self.sys["cpu"], round(100 * self.sys["mem_used"] / m["MemTotal"], 1),
                                   g.get("util"), g.get("mem_used"), g.get("power")))
@@ -244,6 +289,9 @@ def users_payload():
     week = {r[0]: (r[1], r[2]) for r in con.execute(
         "SELECT user, COUNT(*), COALESCE(SUM(prompt+completion),0) FROM usage WHERE ts>=? GROUP BY user",
         (time.time() - 7 * 86400,))}
+    since = time.strftime("%Y-%m-%d", time.localtime(time.time() - 29 * 86400))
+    gpu30 = {r[0]: (r[1], r[2]) for r in con.execute(
+        "SELECT user, SUM(held_s), SUM(busy_s) FROM gpu_usage WHERE day>=? GROUP BY user", (since,))}
     con.close()
     out = []
     for name in L.lab_members():
@@ -266,6 +314,7 @@ def users_payload():
             "home": pw.pw_dir, "home_fs": L.home_fs(pw.pw_dir),
             "llm_today": {"requests": td[0], "prompt": td[1], "completion": td[2]},
             "llm_week": {"requests": week.get(name, (0, 0))[0], "tokens": week.get(name, (0, 0))[1]},
+            "gpu_30d": {"held_h": round(gpu30.get(name, (0, 0))[0] / 3600, 2), "busy_h": round(gpu30.get(name, (0, 0))[1] / 3600, 2)},
         })
     return out
 
@@ -279,12 +328,20 @@ def user_detail(name):
     recent = [dict(r) for r in con.execute(
         "SELECT ts, endpoint, model, prompt, completion, ms, ttft_ms, status, stream, ip FROM usage WHERE user=? "
         "ORDER BY ts DESC LIMIT 50", (name,))]
+    since = time.strftime("%Y-%m-%d", time.localtime(time.time() - 29 * 86400))
+    gdays = {r["day"]: r for r in con.execute(
+        "SELECT day, held_s, busy_s, mem_mib_s, peak_mib FROM gpu_usage WHERE user=? AND day>=?", (name, since))}
     con.close()
     keys = L.list_keys(name)
     return {"name": name, "ssh_keys": [{"index": i, "type": k.split()[0], "comment": " ".join(k.split()[2:]) or "",
                                         "fingerprint": k.split()[1][-16:] if len(k.split()) > 1 else ""}
                                        for i, k in enumerate(keys)],
-            "usage_days": fill_days(days), "recent": recent, "history": list(STATS.chist.get("lab-" + name, []))}
+            "usage_days": fill_days(days), "recent": recent, "history": list(STATS.chist.get("lab-" + name, [])),
+            "gpu_days": [{"d": d, "busy": round(r["busy_s"] / 3600, 2) if r else 0,
+                          "idle": round(max(0, r["held_s"] - r["busy_s"]) / 3600, 2) if r else 0,
+                          "avg_gib": round(r["mem_mib_s"] / r["held_s"] / 1024, 1) if r and r["held_s"] else 0,
+                          "peak_gib": round(r["peak_mib"] / 1024, 1) if r else 0}
+                         for d in (x["d"] for x in fill_days([])) for r in [gdays.get(d)]]}
 
 
 def llm_payload():

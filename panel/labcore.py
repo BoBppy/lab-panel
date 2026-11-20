@@ -156,6 +156,9 @@ CREATE TABLE IF NOT EXISTS usage(
 CREATE INDEX IF NOT EXISTS usage_user_ts ON usage(user, ts);
 CREATE INDEX IF NOT EXISTS usage_ts ON usage(ts);
 CREATE TABLE IF NOT EXISTS admins(name TEXT PRIMARY KEY, pw TEXT, created REAL);
+CREATE TABLE IF NOT EXISTS gpu_usage(
+  day TEXT, user TEXT, held_s REAL DEFAULT 0, busy_s REAL DEFAULT 0, mem_mib_s REAL DEFAULT 0, peak_mib REAL DEFAULT 0,
+  PRIMARY KEY(day, user));
 CREATE TABLE IF NOT EXISTS audit(id INTEGER PRIMARY KEY, ts REAL, actor TEXT, action TEXT, target TEXT, detail TEXT);
 """
 
