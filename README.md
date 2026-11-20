@@ -18,7 +18,7 @@ It is built from the Python standard library, Podman, Docker and a few lines of 
 - Each container gets its own fixed range of 65,536 host uids, so its root is not the host's root and not any other person. Home and data folders are id-mapped: the person's files keep their real owner on disk, and files made with `sudo` belong to the container's own base uid, so nothing inside can create a file owned by host root.
 
 **Disks**
-- Describe your disks once in `/etc/lab/lab.json`. Per person you then choose where the home folder lives, which data disks are mounted, and how much they may fill on each.
+- The panel finds the server's disks itself and names them from the hardware ("NVMe SSD, 1 TB", with the drive model underneath), whatever the layout: one disk, several SSDs, hard disks, RAID or LVM, or network storage. Under Settings, Disks, you choose which disks may hold home folders and data folders, and turn on limits per disk. Per person you then choose where the home folder lives, which data disks are mounted, and how much they may fill on each.
 - Disk limits are kernel-enforced ext4 user quotas, not periodic scans. Container system files count against the person's limit on the disk that holds Docker's data.
 
 **Language model**
@@ -66,14 +66,13 @@ It is built from the Python standard library, Podman, Docker and a few lines of 
 ```bash
 git clone <this repo> && cd lab-panel
 sudo LAB_ORG="Physics Lab" panel/install.sh      # panel, gateway, ssh wiring, first admin (password printed once)
-sudoedit /etc/lab/lab.json                        # describe your disks (see lab.example.json), then:
-sudo panel/storage-setup.sh                       # turn on per-person disk limits and lxcfs
+sudo panel/storage-setup.sh                       # lxcfs, plus disk limits on the disk that holds /home
 sudo lab-ctl build                                # build the container image (20-40 minutes)
 sudo scripts/harden.sh                            # optional, recommended: firewall, fail2ban, sshd, update policy
 sudo scripts/gpu-profiling.sh on                  # optional: GPU performance counters for everyone (after a reboot)
 ```
 
-Then open `https://<server>:39743`, sign in as `admin`, and add your first person.
+Then open `https://<server>:39743`, sign in as `admin`, pick disks for home and data folders under Settings, Disks, and add your first person.
 
 Where upstream package sources are slow, copy `devbox/mirrors-cn.args` (or your own `KEY=value` file) to `/etc/lab/devbox.args` before `lab-ctl build`. For engine images, set `hf_endpoint` and `ghcr_mirror` in `lab.json`. Images pulled through a mirror are checked against ghcr.io's digest before use.
 
@@ -84,7 +83,7 @@ Everything host-specific lives in `/etc/lab/lab.json`. Missing keys take the def
 | Key | Meaning |
 |---|---|
 | `org` | Name shown in the panel and in the TLS certificate |
-| `storage` | Disks people can use: `path` (mount point; limits apply here), `label`, `homes` (where home folders may live), `data` (parent of per-person data folders) |
+| `storage` | Disks people can use; normally edited in the panel. `path` (mount point; limits apply here), `homes` (where home folders may live), `data` (parent of per-person data folders), optional `label` to replace the automatic name |
 | `default_quota_gb` | Limits for new people, per disk path |
 | `container_fs` | Disk that holds container system files; empty = detect from Docker |
 | `default_sudo` | Whether new people get admin rights inside their container |

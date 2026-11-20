@@ -1,13 +1,16 @@
 #!/bin/bash
-# Turn on per-person disk limits (journaled ext4 user quotas) on every disk in /etc/lab/lab.json "storage",
-# and install lxcfs so containers report their own memory and CPU limits. Idempotent; run as root.
+# Turn on per-person disk limits (journaled ext4 user quotas) on the given mount points, or on every disk in
+# /etc/lab/lab.json "storage", and install lxcfs so containers report their own limits. Idempotent; run as root.
+#   storage-setup.sh            all configured disks
+#   storage-setup.sh /data      one disk (the panel's "Turn on limits" button runs this)
 # Each storage "path" must be the mount point of an ext4 filesystem with an fstab entry.
 # Other filesystems are skipped: the panel then shows usage without limits there.
 set -euo pipefail
 export DEBIAN_FRONTEND=noninteractive
 dpkg -s quota lxcfs rsync >/dev/null 2>&1 || { apt-get -o Acquire::Retries=5 update -qq; apt-get -o Acquire::Retries=5 install -y -qq quota lxcfs rsync >/dev/null; }
 systemctl enable --now lxcfs >/dev/null 2>&1 || true
-paths=$(python3 -I -c 'import sys; sys.path.insert(0,"/opt/lab/panel"); import labcore as L; print(" ".join(L.QUOTA_FS))')
+paths="$*"
+[ -n "$paths" ] || paths=$(python3 -I -c 'import sys; sys.path.insert(0,"/opt/lab/panel"); import labcore as L; print(" ".join(L.QUOTA_FS))')
 cp -n /etc/fstab /etc/fstab.before-quota
 for fs in $paths; do
   type=$(findmnt -no FSTYPE --target "$fs" || true)

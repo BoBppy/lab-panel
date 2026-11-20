@@ -157,8 +157,9 @@ async function loadOverview() {
   ].map(([k, v, sub, sv]) => `<div class="reading"><div class="k">${k}</div><div class="v">${v}</div><div class="s">${sub}</div>${sv}</div>`).join("");
   $("#strataPill").innerHTML = enginePill(OV.strata, OV.containers.engine);
   $("#strataBox").innerHTML = engineSummary(OV.strata, OV.containers.engine);
-  $("#diskBox").innerHTML = Object.entries(s.disks || {}).filter(([, d]) => d).map(([p, d]) =>
-    `<div class="disk">${meter(d.used, d.total, `<b>${esc(p)}</b>`, `${fmtB(d.used)} of ${fmtB(d.total)}`)}</div>`).join("");
+  $("#diskBox").innerHTML = (s.disks || []).filter((d) => d.total).map((d) =>
+    `<div class="disk">${meter(d.used, d.total, `<b>${esc(FSN[d.path] || d.label)}</b> <span class="sub">${esc(d.path)}</span>`, `${fmtB(d.used)} of ${fmtB(d.total)}`)}
+      ${d.model ? `<span class="model" title="${esc(d.model)}">${esc(d.model)}</span>` : ""}</div>`).join("");
   const rows = OV.users.map((u) => {
     const c = u.container || {}, run = c.state === "running";
     return `<tr class="click" data-user="${esc(u.name)}"><td class="who"><b>${esc(u.name)}</b><small>${esc(u.full_name)}</small></td><td>${pill(c.state, u.disabled)}</td>
@@ -235,7 +236,7 @@ function storageRows(st) {
     const access = d.data ? st.data.includes(d.data) : false, lim = st.quotas?.[d.path] ?? 0;
     const why = [sys && "container system files", d.data && `data folder ${d.data}/${st.name || "name"}`].filter(Boolean).join(", ");
     return `<div class="disk-row" data-path="${esc(d.path)}" data-homes="${esc(d.homes || "")}">
-      <div><b>${esc(d.label)}</b> <span class="sub">${esc(d.path)}</span><div class="hint"><span class="homehere">home folder${why ? ", " : ""}</span>${esc(why)}</div></div>
+      <div title="${esc(d.model || "")}"><b>${esc(d.label)}</b> <span class="sub">${esc(d.path)}</span><div class="hint"><span class="homehere">home folder${why ? ", " : ""}</span>${esc(why)}</div></div>
       <label class="check">${d.data ? `<input type="checkbox" class="acc" data-root="${esc(d.data)}" ${access ? "checked" : ""}> Data folder` : '<span class="sub">no data folder</span>'}</label>
       ${quota ? `<span class="inline lim"><input type="number" min="1" class="cap" value="${lim || ""}" placeholder="GB" aria-label="Limit in GB on ${esc(d.path)}"><label class="check"><input type="checkbox" class="unl" ${lim ? "" : "checked"}> No limit</label></span>` : '<span class="sub">no disk accounting</span>'}
     </div>`;
@@ -541,7 +542,7 @@ const ACTIONS = { "user-add": "Added person", "user-edit": "Changed settings", "
   password: "Set password", "ssh-key-add": "Added SSH key", "ssh-key-remove": "Removed SSH key", "llm-key-regenerate": "Replaced model key", "llm-key-view": "Viewed model key",
   quota: "Changed disk limits", "home-move": "Moved home folder", login: "Signed in", "login-failed": "Failed sign-in", "engine-apply": "Applied engine settings",
   "engine-apply-failed": "Engine settings failed", "engine-pull": "Downloaded engine version", "admin-password": "Set admin password", "admin-save": "Changed panel admin", "admin-delete": "Removed panel admin",
-  "two-factor-on": "Turned on two-factor sign-in", "two-factor-off": "Turned off two-factor sign-in", "system-upgrade": "Installed server updates", reboot: "Restarted the server" };
+  "two-factor-on": "Turned on two-factor sign-in", "two-factor-off": "Turned off two-factor sign-in", storage: "Changed disk settings", "disk-limits": "Turned on disk limits", "system-upgrade": "Installed server updates", reboot: "Restarted the server" };
 async function loadAudit() {
   const rows = await api("GET", "audit");
   $("#auditTable").innerHTML = `<thead><tr><th>Time</th><th>By</th><th>What</th><th>Who or what</th><th>Details</th></tr></thead><tbody>${rows.map((r) => `<tr><td>${fmtT(r.ts)}</td><td>${esc(r.actor)}</td><td>${esc(ACTIONS[r.action] || r.action.replace(/-/g, " "))}</td><td>${esc(r.target)}</td><td class="sub" style="white-space:normal;max-width:520px;overflow-wrap:anywhere">${esc(r.detail)}</td></tr>`).join("") || '<tr><td colspan="5" class="empty">Nothing yet.</td></tr>'}</tbody>`;
@@ -569,6 +570,7 @@ async function loadSettings() {
       <div class="inline"><input id="tfCode" inputmode="numeric" placeholder="6-digit code"><button class="btn primary" id="tfConfirm">Turn on</button></div>`;
     $("#tfConfirm").addEventListener("click", async () => { await act(() => api("POST", "me/totp/confirm", { code: $("#tfCode").value }), "Two-factor sign-in is on."); ME.two_factor = true; loadSettings(); });
   });
+  loadDisks(false).catch(() => {});
   if (ME.role === "owner") {
     const admins = await api("GET", "admins");
     $("#adminsTable").innerHTML = `<thead><tr><th>Name</th><th>Role</th><th>Two-factor</th><th>Added</th><th></th></tr></thead><tbody>${admins.map((a) => `<tr><td><b>${esc(a.name)}</b>${a.name === ME.user ? ' <span class="sub">you</span>' : ""}</td>
@@ -584,6 +586,46 @@ async function loadSettings() {
     $("#updBox").innerHTML = '<p class="sub">Only an owner can update the server.</p>';
   }
 }
+// ------------------------------------------------------------------ settings: disks found on this server
+async function loadDisks(refresh) {
+  const r = await api("GET", "system/disks" + (refresh ? "?refresh=1" : ""));
+  const own = ME.role === "owner";
+  const lim = (d) => d.limits === "on" ? '<span class="pill ok">On</span>'
+    : d.limits === "unsupported" ? `<span class="sub">${d.network ? "Not on network storage" : `Not on ${esc(d.fstype)}`}</span>`
+    : own && (d.homes || d.data || d.path === r.container_fs) ? `<button class="btn sm" data-limits="${esc(d.path)}">Turn on</button>` : '<span class="sub">Off</span>';
+  const rows = r.disks.map((d) => `<tr data-disk="${esc(d.path)}">
+      <td class="disk-name">${own ? `<input class="dlabel" value="${esc(d.custom_label)}" placeholder="${esc(d.label)}" maxlength="40" aria-label="Name for ${esc(d.path)}">` : `<b>${esc(d.custom_label || d.label)}</b>`}
+        ${d.model ? `<span class="model" title="${esc(d.model)}">${esc(d.model)}</span>` : ""}
+        <span class="sub">${esc(d.path)}, ${esc(d.fstype)}${d.path === r.container_fs ? ", holds container system files" : ""}</span></td>
+      <td style="min-width:180px">${meter(d.used, d.size, "", `${fmtB(d.avail)} free of ${fmtB(d.size)}`)}</td>
+      <td><label class="check"><input type="checkbox" class="dhomes" ${d.homes ? "checked" : ""} ${own ? "" : "disabled"} aria-label="Home folders on ${esc(d.path)}"> Allowed</label>
+        ${d.homes ? `<span class="sub">${esc(d.homes_dir)}, ${d.people} ${d.people === 1 ? "person" : "people"}</span>` : ""}</td>
+      <td><label class="check"><input type="checkbox" class="ddata" ${d.data ? "checked" : ""} ${own && d.path !== "/home" ? "" : "disabled"} aria-label="Data folders on ${esc(d.path)}"> Allowed</label>
+        ${d.data ? `<span class="sub">${esc(d.data_dir)}/<i>name</i></span>` : ""}</td>
+      <td>${lim(d)}</td></tr>`);
+  $("#disksTable").innerHTML = `<thead><tr><th>Disk</th><th>Space</th><th>Home folders</th><th>Data folders</th><th>Disk limits</th></tr></thead>
+    <tbody>${rows.join("") || '<tr><td colspan="5" class="empty">No usable disks found.</td></tr>'}</tbody>`;
+  const slow = r.disks.some((d) => d.rotational && d.homes);
+  $("#diskFoot").innerHTML = (own ? '<button class="btn primary" id="diskSave">Save disk settings</button> ' : "") +
+    `<span class="hint">Names come from the drive itself; type your own to replace one. Disk limits need ext4.${slow ? " A hard disk holds home folders: code, environments and many small files are much faster on an SSD." : ""}</span>`;
+  $("#diskSave")?.addEventListener("click", async () => {
+    const disks = $$("#disksTable tr[data-disk]").map((tr) => ({ path: tr.dataset.disk, homes: $(".dhomes", tr).checked, data: $(".ddata", tr).checked, label: $(".dlabel", tr).value }));
+    await act(() => api("PUT", "system/disks", { disks }), "Disk settings saved.");
+    ME = await api("GET", "me"); Object.keys(FSN).forEach((k) => delete FSN[k]); ME.storage.forEach((d) => (FSN[d.path] = d.label));
+    loadDisks(true);
+  });
+  $$("[data-limits]").forEach((b) => b.addEventListener("click", async () => {
+    if (!confirm(`Turn on disk limits for ${b.dataset.limits}? The disk is remounted and checked once, which can take a few minutes on a large, full disk.`)) return;
+    const j = await act(() => api("POST", "system/disks/limits", { path: b.dataset.limits }), "Turning on disk limits…");
+    const log = $("#diskLog"); log.classList.remove("hidden");
+    const poll = setInterval(async () => {
+      const x = (await api("GET", "jobs")).find((y) => y.id === j.id) || j;
+      log.textContent = x.log.join("\n");
+      if (x.state !== "running") { clearInterval(poll); toast(x.state === "done" ? "Disk limits are on." : "Turning on disk limits failed. See the log.", x.state !== "done"); loadDisks(true); }
+    }, 1500);
+  }));
+}
+$("#diskRefresh").addEventListener("click", () => loadDisks(true));
 async function loadUpdates(refresh) {
   const u = await api("GET", "system/updates" + (refresh ? "?refresh=1" : ""));
   $("#updCount").textContent = u.upgradable.length || "";

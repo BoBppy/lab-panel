@@ -238,3 +238,11 @@ dialog.center { width: min(720px, 94vw); border-radius: 10px; border: 1px solid 
 .disk-row .lim input[type=number] { width: 92px; }
 .disk-row input:disabled { cursor: not-allowed; }
 @media (max-width: 640px) { .disk-row { grid-template-columns: 1fr; gap: 6px; } }
+
+/* drive model: secondary, one line, full name on hover */
+.model { display: block; max-width: 30ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); font-size: 12px; }
+.disk .model { margin-top: -2px; }
+.disk-name { min-width: 220px; }
+.disk-name .dlabel { width: 100%; max-width: 260px; font-weight: 600; }
+.disk-name .sub { display: block; }
+.disk-foot { display: flex; gap: 14px; align-items: center; flex-wrap: wrap; padding-top: 12px; padding-bottom: 14px; }

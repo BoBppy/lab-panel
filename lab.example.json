@@ -6,19 +6,19 @@
   "strata_port": 39701,
 
   "storage": [
-    {"path": "/home", "label": "System NVMe", "homes": "/home"},
-    {"path": "/ssd",  "label": "Data NVMe",   "homes": "/ssd/home", "data": "/ssd/data"},
-    {"path": "/hdd",  "label": "Hard disk",   "homes": "/hdd/home", "data": "/hdd/data"}
+    {"path": "/home", "homes": "/home"},
+    {"path": "/data", "homes": "/data/home", "data": "/data/data"},
+    {"path": "/bulk", "data": "/bulk/data", "label": "Archive disk"}
   ],
-  "default_quota_gb": {"/home": 200, "/ssd": 300, "/hdd": 2000},
+  "default_quota_gb": {"/home": 200, "/data": 300, "/bulk": 2000},
   "container_fs": "",
   "default_sudo": true,
 
   "default_daily_tokens": 0,
   "default_concurrency": 2,
-  "models_root": "/ssd/models",
-  "engine_state": "/ssd/engine",
-  "hf_cache": "/ssd/hf-cache",
+  "models_root": "/data/models",
+  "engine_state": "/data/engine",
+  "hf_cache": "/data/hf-cache",
   "hf_endpoint": "",
   "ghcr_mirror": ""
 }

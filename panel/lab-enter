@@ -104,7 +104,9 @@ s='$CPUSET'; print(sum((int(b)-int(a)+1) if '-' in p else 1 for p in s.split(','
     local priv=(-e LAB_SUDO=1)
     [ "$SUDO_EFFECTIVE" = no ] && priv=(-e LAB_SUDO=0 --security-opt no-new-privileges)
     # --oom-score-adj 500: if the host runs out of memory, user processes are killed before the LLM engine.
-    "$RT" run -d --name "$C" --label lab.user="$U" --restart unless-stopped "${ns[@]}" \
+    # podman-restart.service brings back "always" containers at boot; Docker's own daemon handles unless-stopped.
+    local restart=unless-stopped; [ "$RT" = podman ] && restart=always
+    "$RT" run -d --name "$C" --label lab.user="$U" --restart "$restart" "${ns[@]}" \
         --label lab.gpu="$GPU" --label lab.sudo="$SUDO_EFFECTIVE" --label lab.data="$data_label" \
         "${gpu[@]}" --network host --cap-drop NET_RAW --oom-score-adj 500 "${priv[@]}" \
         --ulimit memlock=-1:-1 "${limits[@]}" "${threads[@]}" "${lx[@]}" \

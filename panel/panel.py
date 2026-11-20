@@ -222,7 +222,7 @@ class Stats:
                     "mem_total": m["MemTotal"], "mem_used": m["MemTotal"] - m["MemAvailable"],
                     "swap_total": m["SwapTotal"], "swap_used": m["SwapTotal"] - m["SwapFree"],
                     "uptime": float(open("/proc/uptime").read().split()[0]), "gpu": g,
-                    "disks": {p: self.df(p) for p in dict.fromkeys(("/",) + L.QUOTA_FS)},
+                    "disks": [dict(d, **(self.df(d["path"]) or {})) for d in L.discover_disks()],
                 }
                 self.cont = self.containers(now)
                 self.account_gpu(now)
@@ -394,6 +394,25 @@ VERSIONS = {"at": 0, "data": None}
 UPDATES = {}
 PENDING_TOTP = {}
 CPU_TOPO = L.cpu_topology()
+
+
+def disk_limits_job(path, actor):
+    """Turn on per-person limits for one disk (ext4 journaled quotas; remounts it)."""
+    job = E.Job("disk-limits")
+    try:
+        p = subprocess.Popen(["bash", "/opt/lab/panel/storage-setup.sh", path], stdout=subprocess.PIPE,
+                             stderr=subprocess.STDOUT, text=True)
+        for line in p.stdout:
+            if line.strip():
+                job.say(line.rstrip()[:200])
+        if p.wait() != 0 or not L.quotas_enabled(path):
+            raise L.LabError(f"limits are not on for {path}")
+        L.audit(actor, "disk-limits", path)
+        job.state = "done"
+    except Exception as e:
+        job.say(f"FAILED: {e}")
+        job.state = "failed"
+    return job
 
 
 def upgrade_job(actor):
@@ -585,10 +604,10 @@ class Handler(BaseHTTPRequestHandler):
         if method == "GET" and parts == ["me"]:
             return self.send(200, {"user": admin, "org": C["org"], "host": os.uname().nodename,
                                    "gateway_port": C["gateway_port"], "model": L.conf()["model"], "ncpu": os.cpu_count(),
-                                   "home_bases": L.HOME_BASES, "quota_fs": [fs for fs in L.QUOTA_FS if L.quotas_enabled(fs)],
+                                   "home_bases": {d["homes"]: f"{d['label']} ({d['homes']})" for d in L.storage_view() if d.get("homes")}, "quota_fs": [fs for fs in L.QUOTA_FS if L.quotas_enabled(fs)],
                                    "default_quota_gb": L.conf().get("default_quota_gb", {}),
                                    "role": L.get_admin(admin)["role"], "two_factor": bool(L.get_admin(admin)["totp"]),
-                                   "cpu": CPU_TOPO, "storage": L.STORAGE, "data_roots": list(L.DATA_ROOTS),
+                                   "cpu": CPU_TOPO, "storage": L.storage_view(), "data_roots": list(L.DATA_ROOTS),
                                    "container_fs": L.container_fs(),
                                    "default_sudo": L.conf().get("default_sudo", True)})
         if method == "GET" and parts == ["overview"]:
@@ -681,6 +700,25 @@ class Handler(BaseHTTPRequestHandler):
                 raise L.LabError("you cannot delete your own account")
             L.delete_admin(L.valid_name(parts[1]), admin)
             return self.send(200, {"ok": True})
+        if parts == ["system", "disks"] and method == "GET":
+            cfg = {s["path"]: s for s in L.STORAGE}
+            homes = [L.pwd.getpwnam(u).pw_dir for u in L.lab_members()]
+            out = []
+            for d in L.discover_disks(0 if qs.get("refresh") == ["1"] else 60):
+                s = cfg.get(d["path"], {})
+                out.append(dict(d, homes=bool(s.get("homes")), data=bool(s.get("data")), custom_label=s.get("label", ""),
+                                homes_dir=s.get("homes", ""), data_dir=s.get("data", ""),
+                                people=sum(1 for h in homes if s.get("homes") and h.startswith(s["homes"] + "/")),
+                                limits="on" if L.quotas_enabled(d["path"]) else ("off" if d["limits_possible"] else "unsupported")))
+            return self.send(200, {"disks": out, "container_fs": L.container_fs()})
+        if parts == ["system", "disks"] and method == "PUT":
+            L.save_storage(self.body_json().get("disks") or [], actor=admin)
+            return self.send(200, {"ok": True})
+        if parts == ["system", "disks", "limits"] and method == "POST":
+            path = str(self.body_json().get("path", ""))
+            if path not in L.QUOTA_FS:
+                raise L.LabError("turn on home or data folders for this disk first")
+            return self.send(200, start_job(disk_limits_job, path, admin))
         if parts == ["system", "updates"] and method == "GET":
             if qs.get("refresh") == ["1"] or time.time() - UPDATES.get("checked", 0) > 1800:
                 if qs.get("refresh") == ["1"]:

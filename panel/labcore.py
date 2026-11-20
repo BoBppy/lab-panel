@@ -42,10 +42,10 @@ DEFAULTS = {
     "default_concurrency": 2,
     # Disks people can use. "homes": where home folders may live; "data": parent of per-person data folders.
     # Quotas (if enabled on the filesystem) count every file a person owns on "path".
-    # Example for a second disk: {"path": "/data", "label": "Data disk", "homes": "/data/home", "data": "/data/users"}
-    "storage": [
-        {"path": "/home", "label": "System disk", "homes": "/home"},
-    ],
+    # Disks people can use, normally edited in the panel (Settings, Disks). "path" is a mount point; "homes" is
+    # where home folders may live; "data" is the parent of per-person data folders; "label" overrides the
+    # automatic name (kind and size, such as "NVMe SSD, 1 TB"). Empty = the disk that holds /home.
+    "storage": [],
     "container_fs": "",               # filesystem holding container system files; empty = detect from Docker
     "default_sudo": True,             # admin rights inside new people's containers
     "default_quota_gb": {},           # per filesystem path, applied to new people; 0 or missing = no limit
@@ -58,19 +58,194 @@ DEFAULTS = {
 }
 
 
+def _mount_of(path):
+    p = os.path.realpath(path)
+    while not os.path.ismount(p):
+        p = os.path.dirname(p)
+    return p
+
+
 def _storage():
     try:
         with open(CONF_PATH) as f:
             st = json.load(f).get("storage")
     except (FileNotFoundError, ValueError):
         st = None
-    return st or DEFAULTS["storage"]
+    return st or [{"path": _mount_of("/home"), "homes": "/home"}]
 
 
-STORAGE = _storage()
-HOME_BASES = {d["homes"]: f"{d['label']} ({d['homes']})" for d in STORAGE if d.get("homes")}
-QUOTA_FS = tuple(d["path"] for d in STORAGE)
-DATA_ROOTS = tuple(d["data"] for d in STORAGE if d.get("data"))
+def reload_storage():
+    """Re-read the storage list (after the panel changes it)."""
+    global STORAGE, HOME_BASES, QUOTA_FS, DATA_ROOTS
+    STORAGE = _storage()
+    HOME_BASES = tuple(d["homes"] for d in STORAGE if d.get("homes"))
+    QUOTA_FS = tuple(d["path"] for d in STORAGE)
+    DATA_ROOTS = tuple(d["data"] for d in STORAGE if d.get("data"))
+
+
+reload_storage()
+
+# ---------------------------------------------------------------- disk discovery
+LOCAL_FS = ("ext4", "ext3", "xfs", "btrfs", "zfs", "f2fs")
+NETWORK_FS = ("nfs", "nfs4", "cifs", "smb3", "ceph", "glusterfs", "fuse.sshfs", "virtiofs", "9p")
+SKIP_MOUNT = re.compile(r"^/(boot|efi|snap|proc|sys|dev|run|tmp|var/lib/(docker|containers|snapd|lxcfs|kubelet))(/|$)"
+                        r"|/(containers|podman|docker|containerd)/.*(storage|overlay)")
+_DISKS = {"t": 0.0, "v": []}
+
+
+def _size_label(b):
+    """Same units as the rest of the panel (1 GB = 1024^3 bytes), so the name matches the space bar."""
+    if b >= 1024 ** 4:
+        return f"{round(b / 1024 ** 4, 1):g} TB"
+    g = b / 1024 ** 3
+    return f"{round(g, 1):g} GB" if g < 100 else f"{round(g)} GB"
+
+
+def _physical(source):
+    """The physical disks under a block device, through partitions, LVM, RAID and encryption."""
+    r = run(["lsblk", "-J", "-s", "-b", "-o", "PATH,TYPE,ROTA,TRAN,MODEL,VENDOR,SIZE", source], check=False)
+    try:
+        tree = json.loads(r.stdout)["blockdevices"]
+    except (ValueError, KeyError, TypeError):
+        return []
+    out, seen = [], set()
+
+    def walk(nodes):
+        for n in nodes or []:
+            if n.get("type") == "disk" and n.get("path") not in seen:
+                seen.add(n.get("path"))
+                out.append(n)
+            walk(n.get("children"))
+    walk(tree)
+    return out
+
+
+def _kind(disks, fstype):
+    if fstype in NETWORK_FS:
+        return "Network storage"
+    if not disks:
+        return "Disk"
+    d = disks[0]
+    tran, name = (d.get("tran") or "").lower(), os.path.basename(d.get("path") or "")
+    if tran == "nvme" or name.startswith("nvme"):
+        k = "NVMe SSD"
+    elif tran == "usb":
+        k = "USB disk"
+    elif name.startswith(("vd", "xvd")) and not d.get("model"):
+        k = "Virtual disk"
+    elif str(d.get("rota")).lower() in ("1", "true"):
+        k = "Hard disk"
+    else:
+        k = "SSD"
+    return f"{k} array of {len(disks)}" if len(disks) > 1 else k
+
+
+def _model(disks):
+    names = []
+    for d in disks:
+        vendor, model = (d.get("vendor") or "").strip(), " ".join((d.get("model") or "").split())
+        if vendor.upper() == "ATA" or model.upper().startswith(vendor.upper()):
+            vendor = ""
+        n = " ".join(x for x in (vendor, model) if x)
+        if n and n not in names:
+            names.append(n)
+    return ", ".join(names)
+
+
+def discover_disks(max_age=60):
+    """Mounted filesystems people could use: mount point, size, kind, drive model, and whether limits work."""
+    if time.time() - _DISKS["t"] < max_age:
+        return _DISKS["v"]
+    r = run(["findmnt", "-J", "-l", "-b", "-o", "TARGET,SOURCE,FSTYPE,SIZE,USED,AVAIL"], check=False)
+    try:
+        mounts = json.loads(r.stdout)["filesystems"]
+    except (ValueError, KeyError, TypeError):
+        mounts = []
+    by_src = {}
+    for m in mounts:
+        t, typ, src = m.get("target") or "", m.get("fstype") or "", m.get("source") or ""
+        if typ not in LOCAL_FS + NETWORK_FS or SKIP_MOUNT.match(t):
+            continue
+        key = src if typ == "btrfs" else re.sub(r"\[.*\]$", "", src)   # bind mounts are the same disk; btrfs subvolumes are not
+        if key in by_src and len(by_src[key]["target"]) <= len(t):
+            continue
+        by_src[key] = m
+    out = []
+    for src, m in sorted(by_src.items(), key=lambda kv: kv[1]["target"]):
+        typ = m["fstype"]
+        disks = [] if typ in NETWORK_FS else _physical(re.sub(r"\[.*\]$", "", src))
+        size = int(m.get("size") or 0)
+        kind = _kind(disks, typ)
+        out.append({"path": m["target"], "source": src, "fstype": typ, "size": size,
+                    "used": int(m.get("used") or 0), "avail": int(m.get("avail") or 0),
+                    "kind": kind, "model": _model(disks), "label": f"{kind}, {_size_label(size)}",
+                    "rotational": kind.startswith("Hard disk"), "network": typ in NETWORK_FS,
+                    "limits_possible": typ == "ext4"})
+    _DISKS.update(t=time.time(), v=out)
+    return out
+
+
+def storage_view():
+    """The configured disks with their discovered name, model and limit status (for the panel)."""
+    found = {d["path"]: d for d in discover_disks()}
+    out = []
+    for s in STORAGE:
+        d = found.get(s["path"], {})
+        on = quotas_enabled(s["path"])
+        out.append(dict(s, label=s.get("label") or d.get("label") or s["path"], auto_label=d.get("label", ""),
+                        model=d.get("model", ""), kind=d.get("kind", ""), fstype=d.get("fstype", ""),
+                        limits="on" if on else ("off" if d.get("limits_possible") else "unsupported")))
+    return out
+
+
+def save_storage(rows, actor="cli"):
+    """rows: [{"path", "homes": bool, "data": bool, "label": str}] for discovered mount points."""
+    found = {d["path"]: d for d in discover_disks(0)}
+    cur = {s["path"]: s for s in STORAGE}
+    cfs = container_fs()
+    new = []
+    for r in rows:
+        p = r.get("path")
+        if p not in found:
+            raise LabError(f"{p} is not a mounted disk on this server")
+        old, e = cur.get(p, {}), {"path": p}
+        if r.get("homes"):
+            if p == "/" and "/home" in found:
+                raise LabError("/home is a separate disk here; choose that one for home folders")
+            e["homes"] = old.get("homes") or ("/home" if p in ("/", "/home") else p.rstrip("/") + "/home")
+        if r.get("data"):
+            if p == "/home":
+                raise LabError("the /home disk already holds their home folders; pick another disk for data folders")
+            e["data"] = old.get("data") or ("/srv/data" if p == "/" else p.rstrip("/") + "/data")
+        label = " ".join(str(r.get("label") or "").split())
+        if len(label) > 40:
+            raise LabError("disk names can be at most 40 characters")
+        if label and label != found[p]["label"]:
+            e["label"] = label
+        if e.get("homes") or e.get("data") or p == cfs:
+            new.append(e)
+    if not any(e.get("homes") for e in new):
+        raise LabError("at least one disk must hold home folders")
+    keep = tuple(e["homes"] + "/" for e in new if e.get("homes"))
+    stranded = [u for u in lab_members() if not pwd.getpwnam(u).pw_dir.startswith(keep)]
+    if stranded:
+        raise LabError("move these home folders first (People, Storage): " + ", ".join(stranded))
+    for e in new:
+        for k in ("homes", "data"):
+            if e.get(k):
+                os.makedirs(e[k], mode=0o755, exist_ok=True)
+    try:
+        c = json.load(open(CONF_PATH))
+    except FileNotFoundError:
+        c = {}
+    c["storage"] = new
+    tmp = CONF_PATH + ".tmp"
+    with open(tmp, "w") as f:
+        json.dump(c, f, indent=2)
+    os.chmod(tmp, 0o644)
+    os.replace(tmp, CONF_PATH)
+    reload_storage()
+    audit(actor, "storage", "", {e["path"]: [k for k in ("homes", "data") if e.get(k)] for e in new})
 
 
 def container_fs():

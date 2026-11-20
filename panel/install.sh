@@ -17,6 +17,7 @@ install -d -m 755 /opt/lab/panel /opt/lab/panel/static /etc/lab /etc/lab/users /
 install -d -m 770 -o root -g labgw /var/lib/lab
 install -d -m 755 /var/lib/lab/lastlogin
 install -m 644 labcore.py panel.py gateway.py engine.py /opt/lab/panel/
+install -m 755 storage-setup.sh /opt/lab/panel/storage-setup.sh
 install -m 644 static/* /opt/lab/panel/static/
 install -m 755 lab-ctl /usr/local/sbin/lab-ctl
 install -m 755 lab-enter /usr/local/sbin/lab-enter
@@ -47,10 +48,10 @@ if [ ! -f /etc/lab/lab.json ]; then
 import json, os
 json.dump({"org": os.environ["ORG"], "panel_listen": "0.0.0.0", "panel_port": 39743,
            "gateway_listen": "0.0.0.0", "gateway_port": 39700, "strata_port": 39701,
-           "storage": [{"path": "/home", "label": "System disk", "homes": "/home"}]},
+           "storage": []},
           open("/etc/lab/lab.json", "w"), indent=2)
 P
-  echo "wrote /etc/lab/lab.json; add more disks there (see lab.example.json), then run storage-setup.sh"
+  echo "wrote /etc/lab/lab.json; choose disks for home and data folders in the panel (Settings, Disks)"
 fi
 chmod 644 /etc/lab/lab.json
 
