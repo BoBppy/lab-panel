@@ -572,7 +572,7 @@ class Handler(BaseHTTPRequestHandler):
         if not os.path.isfile(f):
             return self.send(404, b"not found", "text/plain")
         ctype = {"html": "text/html; charset=utf-8", "js": "text/javascript", "css": "text/css",
-                 "svg": "image/svg+xml", "ico": "image/x-icon", "woff2": "font/woff2"}.get(name.rsplit(".", 1)[-1], "application/octet-stream")
+                 "svg": "image/svg+xml", "ico": "image/x-icon", "woff2": "font/woff2", "json": "application/json"}.get(name.rsplit(".", 1)[-1], "application/octet-stream")
         self.send(200, open(f, "rb").read(), ctype)
 
     def login(self):

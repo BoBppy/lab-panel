@@ -1,6 +1,15 @@
 /* Lab server console. Bitter (slab) for titles and readings, Public Sans for the interface. */
 @font-face { font-family: "Public Sans"; src: url("publicsans-var.woff2") format("woff2"); font-weight: 100 900; font-display: swap; }
 @font-face { font-family: "Bitter"; src: url("bitter-var.woff2") format("woff2"); font-weight: 100 900; font-display: swap; }
+@font-face { font-family: "Source Serif 4"; src: url("sourceserif4-var.woff2") format("woff2"); font-weight: 200 900; font-display: swap; }
+@font-face { font-family: "Hanken Grotesk"; src: url("hankengrotesk-var.woff2") format("woff2"); font-weight: 100 900; font-display: swap; }
+/* Cyrillic: Bitter and Source Serif have their own; Public Sans and Hanken Grotesk have none, so Golos Text, a grotesque
+   drawn for Russian, stands in under their names. Each file loads only when a page contains Cyrillic.
+   A face's weight range must equal the main face's, or Chrome treats them as two faces and uses only one. */
+@font-face { font-family: "Bitter"; src: url("bitter-cyr.woff2") format("woff2"); font-weight: 100 900; font-display: swap; unicode-range: U+0400-045F, U+0490-0491, U+04B0-04B1, U+2116; }
+@font-face { font-family: "Source Serif 4"; src: url("sourceserif4-cyr.woff2") format("woff2"); font-weight: 200 900; font-display: swap; unicode-range: U+0400-045F, U+0490-0491, U+04B0-04B1, U+2116; }
+@font-face { font-family: "Public Sans"; src: url("golos-cyr.woff2") format("woff2"); font-weight: 100 900; font-display: swap; unicode-range: U+0400-045F, U+0490-0491, U+04B0-04B1, U+2116; }
+@font-face { font-family: "Hanken Grotesk"; src: url("golos-cyr.woff2") format("woff2"); font-weight: 100 900; font-display: swap; unicode-range: U+0400-045F, U+0490-0491, U+04B0-04B1, U+2116; }
 
 /* Theme: html[data-scheme] picks the colour scheme, html[data-mode] light or dark (theme.js resolves "automatic").
    Each scheme is a landscape: pine forest and canola, lake water, heather moor, graphite. Status colours stay shared. */
@@ -22,11 +31,27 @@
   --s-engine: #2f5d4b; --s-users: #c99a2e; --s-cache: #a9b6ab; --s-free: transparent;
   --p1: #2f5d4b; --p2: #c99a2e; --p3: #4f7895; --p4: #8a5a7c; --p5: #7c8f3a; --p6: #b55f3f;
   --focus: 0 0 0 3px color-mix(in srgb, var(--canola) 55%, transparent);
-  --sans: "Public Sans", ui-sans-serif, system-ui, sans-serif;
-  --slab: "Bitter", Georgia, serif;
-  --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
   color-scheme: light;
 }
+/* Typefaces. Field: Bitter and Public Sans. Book: Source Serif 4 and Hanken Grotesk, a reading serif for titles and
+   numbers. System: the computer's own. Chinese falls back to the system's CJK fonts, which are too large to ship. */
+:root, [data-font] {
+  --cjk-sans: "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans CJK SC", "Source Han Sans SC", sans-serif;
+  --cjk-serif: "Songti SC", "Noto Serif CJK SC", "Source Han Serif SC", "SimSun", serif;
+  --sans: "Public Sans", ui-sans-serif, system-ui, var(--cjk-sans);
+  --slab: "Bitter", Georgia, var(--cjk-serif);
+  --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+}
+[data-font="book"] { --sans: "Hanken Grotesk", ui-sans-serif, system-ui, var(--cjk-sans); --slab: "Source Serif 4", "Iowan Old Style", Georgia, var(--cjk-serif); }
+[data-font="system"] { --sans: system-ui, -apple-system, "Segoe UI", Roboto, var(--cjk-sans); --slab: system-ui, -apple-system, "Segoe UI", Roboto, var(--cjk-sans); }
+[data-font="book"] .block-h h2 { font-family: var(--slab); font-size: 16.5px; font-weight: 600; }
+[data-font="book"] .page h1, [data-font="book"] .dlg-h h2 { font-weight: 500; letter-spacing: -.3px; }
+[data-font="book"] body { font-size: 14.5px; }
+:lang(zh) .page h1, :lang(zh) .dlg-h h2, :lang(zh) .login-card h1, :lang(ja) .page h1, :lang(ja) .dlg-h h2, :lang(ja) .login-card h1 { letter-spacing: 0; }
+/* Japanese uses Japanese glyph shapes for the shared Han characters, so it gets its own fallbacks */
+:root:lang(ja), :lang(ja) [data-font] {
+  --cjk-sans: "Hiragino Sans", "Hiragino Kaku Gothic ProN", "Yu Gothic UI", "Yu Gothic", "Meiryo", "Noto Sans CJK JP", "Source Han Sans JP", sans-serif;
+  --cjk-serif: "Hiragino Mincho ProN", "Yu Mincho", "Noto Serif CJK JP", "Source Han Serif JP", serif; }
 [data-mode="dark"] {
   --lichen: #111814; --sheet: #18211c; --pine: #0d1a14; --pine-2: #17302a; --soil: #e1e7e0; --muted: #94a39a;
   --rule: #2a352f; --rule-soft: #212b25;
@@ -91,7 +116,7 @@ nav button:hover { background: rgba(255, 255, 255, .06); color: #fff; }
 nav button.on { background: var(--pine-2); color: #fff; }
 nav button.on::before { content: ""; position: absolute; left: -14px; top: 8px; bottom: 8px; width: 3px; border-radius: 0 3px 3px 0; background: var(--canola); }
 nav .count { margin-left: auto; font-size: 12px; color: var(--side-dim); }
-.side-foot { margin-top: auto; padding: 14px 8px 0; border-top: 1px solid rgba(255, 255, 255, .08); display: flex; justify-content: space-between; align-items: center; font-size: 13px; color: var(--side-dim); }
+.side-foot { padding: 14px 8px 0; border-top: 1px solid color-mix(in srgb, var(--side-ink) 9%, transparent); display: flex; justify-content: space-between; align-items: center; font-size: 13px; color: var(--side-dim); }
 .link { border: 0; background: none; color: inherit; font: inherit; cursor: pointer; padding: 2px 0; text-decoration: underline; text-underline-offset: 3px; text-decoration-color: rgba(255, 255, 255, .25); }
 .link:hover { color: #fff; }
 
@@ -251,6 +276,7 @@ dialog.center { width: min(720px, 94vw); border-radius: 10px; border: 1px solid 
   .side { position: static; height: auto; flex-direction: row; flex-wrap: wrap; align-items: center; gap: 8px; padding: 12px 14px; }
   .brand { padding: 0 8px 0 0; } nav { display: flex; flex-wrap: wrap; } nav button.on::before { display: none; }
   .side-foot { margin: 0 0 0 auto; border: 0; padding: 0; gap: 10px; }
+  .dock { margin: 0 0 0 auto; border: 0; padding: 0; } .dock-time span { display: none; }
   main { padding: 20px 16px 48px; }
   .split { grid-template-columns: 1fr; } .form { grid-template-columns: 1fr; }
   .lrow { grid-template-columns: 1fr; gap: 6px; } .lrow .total { text-align: left; }
@@ -294,27 +320,11 @@ dialog.center { width: min(720px, 94vw); border-radius: 10px; border: 1px solid 
 .btn.file:focus-within { box-shadow: var(--focus); }
 @media (max-width: 720px) { .brand-edit { grid-template-columns: 1fr; } }
 
-/* ---------- sidebar refresh */
-.side-refresh { padding: 12px 8px; display: grid; gap: 4px; }
-.side-btn { display: inline-flex; align-items: center; gap: 8px; justify-self: start; border: 1px solid color-mix(in srgb, var(--side-ink) 22%, transparent);
-  background: none; color: var(--side-ink); font: 500 13px var(--sans); padding: 6px 11px 6px 9px; border-radius: 5px; cursor: pointer; }
-.side-btn:hover { background: color-mix(in srgb, var(--side-ink) 8%, transparent); }
-.side-btn svg { width: 16px; height: 16px; fill: none; stroke: var(--canola); stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
-.side-btn.busy svg { animation: spin .8s linear infinite; }
-@keyframes spin { to { transform: rotate(360deg); } }
-#refreshNote { font-size: 12px; color: var(--side-dim); line-height: 1.35; }
-#refreshNote b { font-weight: 500; color: var(--side-soft); }
-
 /* ---------- settings: appearance */
 .look { display: grid; gap: 18px; }
 .look h3 { font-size: 13px; font-weight: 600; font-family: var(--sans); margin-bottom: 7px; }
-.seg { display: inline-flex; border: 1px solid var(--rule); border-radius: 6px; overflow: hidden; background: var(--sheet); }
-.seg label { display: block; padding: 7px 14px; font-weight: 500; cursor: pointer; border-left: 1px solid var(--rule); }
-.seg label:first-child { border-left: 0; }
-.seg label, .swatch { position: relative; }
-.seg input, .swatch input { position: absolute; left: 0; top: 0; width: 1px; height: 1px; margin: 0; opacity: 0; pointer-events: none; }
-.seg label:has(input:checked) { background: var(--pine); color: #fff; }
-.seg label:has(input:focus-visible), .swatch:has(input:focus-visible) { box-shadow: var(--focus); }
+.swatch, .face { position: relative; }
+.swatch input, .face input { position: absolute; left: 0; top: 0; width: 1px; height: 1px; margin: 0; opacity: 0; pointer-events: none; }
 .swatches { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
 .swatch { display: grid; gap: 7px; padding: 7px; border: 1px solid var(--rule); border-radius: 8px; background: var(--sheet); color: var(--soil); cursor: pointer; font-weight: 500; }
 .swatch:has(input:checked) { border-color: var(--soil); box-shadow: inset 0 0 0 1px var(--soil); }
@@ -330,4 +340,63 @@ dialog.center { width: min(720px, 94vw); border-radius: 10px; border: 1px solid 
 @media (max-width: 720px) { .swatches { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 .look-hint { margin: 6px 0 0; }
 .inline-label { display: inline; font-size: inherit; font-weight: inherit; }
-[data-mode="dark"] .seg label:has(input:checked) { background: var(--canola); color: var(--on-accent); }
+/* ---------- sidebar dock: refresh ring, last update, light/dark switch */
+.dock { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 8px; margin: auto -2px 0; padding: 12px 8px 14px;
+  border-top: 1px solid color-mix(in srgb, var(--side-ink) 9%, transparent); }
+.ring { position: relative; width: 34px; height: 34px; padding: 0; border: 0; border-radius: 50%; background: none; color: var(--side-soft); cursor: pointer; display: grid; place-items: center; }
+.ring:hover { color: var(--side-ink); background: color-mix(in srgb, var(--side-ink) 8%, transparent); }
+.ring-svg { position: absolute; inset: 0; width: 100%; height: 100%; transform: rotate(-90deg); }
+.ring-track { fill: none; stroke: color-mix(in srgb, var(--side-ink) 14%, transparent); stroke-width: 1.5; }
+.ring-fill { fill: none; stroke: var(--canola); stroke-width: 2; stroke-linecap: round; stroke-dasharray: 100; stroke-dashoffset: 100; }
+.ring.run .ring-fill { animation: ring-fill var(--every, 5s) linear forwards; }
+@keyframes ring-fill { to { stroke-dashoffset: 0; } }
+.ring-icon { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+.ring.busy .ring-icon { animation: spin .7s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .ring.run .ring-fill { stroke-dashoffset: 0; opacity: .45; } }
+.dock-time { display: grid; line-height: 1.25; min-width: 0; }
+.dock-time b { font-size: 13px; font-weight: 550; color: var(--side-ink); font-variant-numeric: tabular-nums; letter-spacing: .2px; }
+.dock-time span { font-size: 11.5px; color: var(--side-dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* light / automatic / dark: a three-stop switch with a sliding knob */
+.mode-switch { --ms-bg: color-mix(in srgb, var(--side-ink) 9%, transparent); --ms-line: color-mix(in srgb, var(--side-ink) 15%, transparent);
+  --ms-ink: var(--side-dim); --ms-knob: var(--canola); --ms-on: var(--on-accent);
+  position: relative; display: inline-grid; grid-template-columns: repeat(3, 24px); height: 26px; padding: 1px; border-radius: 13px;
+  background: var(--ms-bg); box-shadow: inset 0 0 0 1px var(--ms-line); }
+.mode-switch::before { content: ""; position: absolute; top: 2px; left: 2px; width: 22px; height: 22px; border-radius: 50%;
+  background: var(--ms-knob); box-shadow: 0 1px 2px rgba(0, 0, 0, .25); transition: transform .22s cubic-bezier(.3, .8, .4, 1); }
+.mode-switch:has(input[value="auto"]:checked)::before { transform: translateX(24px); }
+.mode-switch:has(input[value="dark"]:checked)::before { transform: translateX(48px); }
+.mode-switch label { position: relative; z-index: 1; display: grid; place-items: center; cursor: pointer; color: var(--ms-ink); border-radius: 50%; transition: color .2s; }
+.mode-switch label:hover { color: var(--side-ink); }
+.mode-switch label:has(input:checked) { color: var(--ms-on); }
+.mode-switch label:has(input:focus-visible) { box-shadow: var(--focus); }
+.mode-switch input { position: absolute; width: 1px; height: 1px; margin: 0; opacity: 0; pointer-events: none; }
+.mode-switch svg { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
+.mode-switch svg .solid { fill: currentColor; stroke: none; }
+.look .mode-switch { --ms-bg: var(--rule-soft); --ms-line: var(--rule); --ms-ink: var(--muted); --ms-knob: var(--pine); --ms-on: #fff;
+  grid-template-columns: repeat(3, 30px); height: 32px; border-radius: 16px; }
+.look .mode-switch::before { width: 28px; height: 28px; }
+.look .mode-switch:has(input[value="auto"]:checked)::before { transform: translateX(30px); }
+.look .mode-switch:has(input[value="dark"]:checked)::before { transform: translateX(60px); }
+.look .mode-switch label:hover { color: var(--soil); }
+.look .mode-switch label:has(input:checked) { color: var(--ms-on); }
+.look .mode-switch svg { width: 16px; height: 16px; }
+[data-mode="dark"] .look .mode-switch { --ms-knob: var(--canola); --ms-on: var(--on-accent); }
+.mode-row { display: flex; align-items: center; gap: 12px; }
+.mode-row .hint { margin: 0; }
+
+/* typeface cards: each previews itself in its own fonts */
+.faces { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+.face { display: grid; gap: 2px; padding: 10px 12px; border: 1px solid var(--rule); border-radius: 8px; background: var(--sheet); cursor: pointer; }
+.face:has(input:checked) { border-color: var(--soil); box-shadow: inset 0 0 0 1px var(--soil); }
+.face .ag { font-family: var(--slab); font-size: 24px; line-height: 1.15; font-weight: 500; white-space: nowrap; }
+.face .body { font-family: var(--sans); font-size: 12.5px; color: var(--muted); }
+.face .nm { font-family: var(--sans); font-weight: 600; font-size: 13px; margin-top: 4px; }
+.look select { max-width: 220px; }
+
+/* sign-in page: language */
+.login-lang { display: flex; gap: 14px; justify-content: center; margin-top: 4px; font-size: 12.5px; }
+.login-lang button { border: 0; background: none; padding: 2px 0; font: inherit; color: var(--muted); cursor: pointer; }
+.login-lang button[aria-current="true"] { color: var(--soil); font-weight: 600; }
+@media (max-width: 720px) { .faces { grid-template-columns: 1fr; } }

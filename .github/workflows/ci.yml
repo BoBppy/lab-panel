@@ -12,10 +12,12 @@ jobs:
       - name: Python compiles
         run: python -m py_compile panel/*.py && python -c "import ast; ast.parse(open('panel/lab-ctl').read())"
       - name: JavaScript parses
-        run: node --check panel/static/app.js && node --check panel/static/theme.js
+        run: for f in panel/static/*.js; do node --check "$f"; done
       - name: Shell scripts
         run: |
           sudo apt-get install -y -qq shellcheck
           shellcheck -S error panel/*.sh panel/lab-enter panel/system/lab-shell scripts/*.sh devbox/*.sh devbox/lab-help devbox/apt-install
+      - name: Every panel string is translated
+        run: python scripts/i18n-check.py
       - name: Example config is valid JSON
         run: python -m json.tool lab.example.json >/dev/null

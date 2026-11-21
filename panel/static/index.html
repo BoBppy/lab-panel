@@ -20,6 +20,7 @@
     <label id="codeRow" class="hidden">Code from your authenticator app<input name="code" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9 ]{6,7}"></label>
     <button class="btn primary wide" type="submit">Sign in</button>
     <p class="err" id="loginErr" role="alert"></p>
+    <div class="login-lang" id="loginLang" aria-label="Language"></div>
   </form>
 </div>
 
@@ -34,9 +35,14 @@
       <button data-tab="audit"><svg viewBox="0 0 20 20"><path d="M5 3h10v14H5zM8 7h4M8 10h4M8 13h2"/></svg>Activity log</button>
       <button data-tab="settings"><svg viewBox="0 0 20 20"><circle cx="10" cy="10" r="2.5"/><path d="M10 2.5v2.2M10 15.3v2.2M2.5 10h2.2M15.3 10h2.2M4.7 4.7l1.6 1.6M13.7 13.7l1.6 1.6M4.7 15.3l1.6-1.6M13.7 6.3l1.6-1.6"/></svg>Settings<span class="count" id="updCount"></span></button>
     </nav>
-    <div class="side-refresh">
-      <button class="side-btn" id="refreshBtn" title="Refresh this page (R)"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M15.5 8.5A6 6 0 1 0 16 12"/><path d="M16 4v4.5h-4.5"/></svg>Refresh</button>
-      <span id="refreshNote" aria-live="polite"></span></div>
+    <div class="dock">
+      <button class="ring" id="refreshBtn" aria-label="Refresh now" title="Refresh now (R)">
+        <svg class="ring-svg" viewBox="0 0 36 36" aria-hidden="true"><circle class="ring-track" cx="18" cy="18" r="16"/><circle class="ring-fill" cx="18" cy="18" r="16" pathLength="100"/></svg>
+        <svg class="ring-icon" viewBox="0 0 20 20" aria-hidden="true"><path d="M15.2 8.4A5.6 5.6 0 1 0 15.6 12"/><path d="M15.6 4.4v4h-4"/></svg>
+      </button>
+      <div class="dock-time"><b id="refreshTime">–</b><span id="refreshEvery"></span></div>
+      <div id="sideMode"></div>
+    </div>
     <div class="side-foot"><span id="adminName"></span><button class="link" id="logoutBtn">Sign out</button></div>
   </aside>
 
@@ -53,7 +59,7 @@
     </section>
 
     <section id="tab-users" class="hidden">
-      <header class="page"><div><h1>People</h1><p class="lede">Each person signs in with <code>ssh name@<span class="hostip"></span></code> and lands in their own container.</p></div>
+      <header class="page"><div><h1>People</h1><p class="lede" data-i18n>Each person signs in with <code>ssh name@<span class="hostip"></span></code> and lands in their own container.</p></div>
         <div class="page-actions"><input id="userFilter" class="search" placeholder="Find a person" aria-label="Find a person"><button class="btn primary" id="addUserBtn">Add person</button></div></header>
       <div class="block flush"><div class="table-wrap"><table id="usersTable"></table></div></div>
     </section>
@@ -87,7 +93,7 @@
     </section>
 
     <section id="tab-audit" class="hidden">
-      <header class="page"><div><h1>Activity log</h1><p class="lede">Every change made from this panel or with <code>lab-ctl</code>.</p></div></header>
+      <header class="page"><div><h1>Activity log</h1><p class="lede" data-i18n>Every change made from this panel or with <code>lab-ctl</code>.</p></div></header>
       <div class="block flush"><div class="table-wrap"><table id="auditTable"></table></div></div>
     </section>
   </main>
@@ -95,6 +101,7 @@
 
 <dialog id="dlg"><div id="dlgBody"></div></dialog>
 <div id="toast" aria-live="polite"></div>
+<script src="i18n.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

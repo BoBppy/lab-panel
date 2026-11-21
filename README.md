@@ -18,7 +18,7 @@ It is built from the Python standard library, Podman, Docker and a few lines of 
 - Each container gets its own fixed range of 65,536 host uids, so its root is not the host's root and not any other person. Home and data folders are id-mapped: the person's files keep their real owner on disk, and files made with `sudo` belong to the container's own base uid, so nothing inside can create a file owned by host root.
 
 **Disks**
-- Each admin picks light, dark or automatic mode, one of four colour schemes, and how often pages refresh on their own (or never). The choice follows them to any browser. Refresh in the sidebar, or the R key, refreshes at any time.
+- In English, 简体中文, 日本語 and Русский. Each admin picks a language (or follows the browser), light, dark or automatic mode, one of four colour schemes, one of three typefaces, and how often pages refresh on their own. The choice follows them to any browser. The ring at the bottom of the sidebar, or the R key, refreshes at any time.
 - Owners set the lab's name and logo (PNG, JPEG, WebP or SVG) under Settings; they appear on the sign-in page, in the sidebar and on the browser tab. The logo is kept in `/etc/lab/logo.*`.
 - The panel finds the server's disks itself and names them from the hardware ("NVMe SSD, 1 TB", with the drive model underneath), whatever the layout: one disk, several SSDs, hard disks, RAID or LVM, or network storage. Under Settings, Disks, you choose which disks may hold home folders and data folders, and turn on limits per disk. Per person you then choose where the home folder lives, which data disks are mounted, and how much they may fill on each.
 - Disk limits are kernel-enforced ext4 user quotas, not periodic scans. Container system files count against the person's limit on the disk that holds Docker's data.
@@ -41,6 +41,14 @@ It is built from the Python standard library, Podman, Docker and a few lines of 
 | Per-person disk access and limits | The engine and how people connect |
 | ![Panel admins, two-factor sign-in and server updates](docs/img/settings.png) | |
 | Admins, two-factor sign-in and updates | |
+
+## Translations
+
+English is written directly in the code; every visible string goes through `_()` in `panel/static/app.js`. Each other language is one file, `panel/static/lang-<code>.json`, mapping the English text to the translation. A translation can carry plural forms (`{"one": …, "few": …, "many": …, "other": …}`), chosen by the browser's plural rules for that language. Messages from the server are matched by their English pattern, so they are translated too.
+
+To add a language, copy `lang-zh.json` to `lang-<code>.json` and translate the values, then add the code in three places: `LANGS` in `panel/static/i18n.js`, the language list in `panel/static/theme.js`, and `PREFS["lang"]` in `panel/labcore.py`. `scripts/i18n-check.py` lists anything missing or with mismatched `{placeholders}`; CI runs it.
+
+Fonts ship with the panel under the SIL Open Font License (`panel/static/OFL.txt`), with Cyrillic files that load only for Russian. Chinese and Japanese use the computer's own fonts, which are too large to ship.
 
 ## How it works
 

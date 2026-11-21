@@ -1122,8 +1122,8 @@ def new_totp_secret():
 
 # Personal panel preferences; they follow the admin to any browser. Not audited: they change nothing on the server.
 PREFS = {"mode": ("auto", "light", "dark"), "scheme": ("pine", "lake", "heather", "graphite"),
-         "refresh": (0, 2, 5, 10, 30, 60)}
-PREFS_DEFAULT = {"mode": "auto", "scheme": "pine", "refresh": 5}
+         "font": ("field", "book", "system"), "lang": ("auto", "en", "zh", "ja", "ru"), "refresh": (0, 2, 5, 10, 30, 60)}
+PREFS_DEFAULT = {"mode": "auto", "scheme": "pine", "font": "field", "lang": "auto", "refresh": 5}
 
 
 def get_prefs(name):
