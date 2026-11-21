@@ -1042,6 +1042,8 @@ def migrate_admins():
         con.execute("UPDATE admins SET role='owner'")          # accounts made before roles existed
     if "totp" not in cols:
         con.execute("ALTER TABLE admins ADD COLUMN totp TEXT")
+    if "prefs" not in cols:
+        con.execute("ALTER TABLE admins ADD COLUMN prefs TEXT")
     con.commit()
     con.close()
 
@@ -1116,6 +1118,36 @@ def totp_ok(secret, code):
 def new_totp_secret():
     import base64
     return base64.b32encode(secrets.token_bytes(20)).decode().rstrip("=")
+
+
+# Personal panel preferences; they follow the admin to any browser. Not audited: they change nothing on the server.
+PREFS = {"mode": ("auto", "light", "dark"), "scheme": ("pine", "lake", "heather", "graphite"),
+         "refresh": (0, 2, 5, 10, 30, 60)}
+PREFS_DEFAULT = {"mode": "auto", "scheme": "pine", "refresh": 5}
+
+
+def get_prefs(name):
+    a = get_admin(name) or {}
+    try:
+        p = json.loads(a.get("prefs") or "{}")
+    except ValueError:
+        p = {}
+    return {k: p[k] if p.get(k) in PREFS[k] else v for k, v in PREFS_DEFAULT.items()}
+
+
+def set_prefs(name, changes):
+    p = get_prefs(name)
+    for k, v in (changes or {}).items():
+        if k not in PREFS:
+            raise LabError(f"unknown setting {k}")
+        if v not in PREFS[k]:
+            raise LabError(f"{k} must be one of " + ", ".join(map(str, PREFS[k])))
+        p[k] = v
+    con = db()
+    con.execute("UPDATE admins SET prefs=? WHERE name=?", (json.dumps(p), name))
+    con.commit()
+    con.close()
+    return p
 
 
 def set_totp(name, secret, actor):

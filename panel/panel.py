@@ -620,7 +620,7 @@ class Handler(BaseHTTPRequestHandler):
                                    "role": L.get_admin(admin)["role"], "two_factor": bool(L.get_admin(admin)["totp"]),
                                    "cpu": CPU_TOPO, "storage": L.storage_view(), "data_roots": list(L.DATA_ROOTS),
                                    "container_fs": L.container_fs(),
-                                   "default_sudo": L.conf().get("default_sudo", True)})
+                                   "default_sudo": L.conf().get("default_sudo", True), "prefs": L.get_prefs(admin)})
         if method == "GET" and parts == ["overview"]:
             return self.send(200, {"sys": STATS.sys, "hist": list(STATS.hist), "strata": STATS.strata,
                                    "containers": STATS.cont, "users": users_payload()})
@@ -670,6 +670,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self.send(200, {"key": L.new_llm_key(name, actor=admin)})
         if method == "GET" and parts == ["llm"]:
             return self.send(200, llm_payload())
+        if parts == ["me", "prefs"] and method == "PUT":
+            return self.send(200, L.set_prefs(admin, self.body_json()))
         if parts == ["me", "password"] and method == "POST":
             b = self.body_json()
             if not L.check_pw(str(b.get("current", "")), L.get_admin(admin)["pw"]):

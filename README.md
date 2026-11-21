@@ -18,6 +18,7 @@ It is built from the Python standard library, Podman, Docker and a few lines of 
 - Each container gets its own fixed range of 65,536 host uids, so its root is not the host's root and not any other person. Home and data folders are id-mapped: the person's files keep their real owner on disk, and files made with `sudo` belong to the container's own base uid, so nothing inside can create a file owned by host root.
 
 **Disks**
+- Each admin picks light, dark or automatic mode, one of four colour schemes, and how often pages refresh on their own (or never). The choice follows them to any browser. Refresh in the sidebar, or the R key, refreshes at any time.
 - Owners set the lab's name and logo (PNG, JPEG, WebP or SVG) under Settings; they appear on the sign-in page, in the sidebar and on the browser tab. The logo is kept in `/etc/lab/logo.*`.
 - The panel finds the server's disks itself and names them from the hardware ("NVMe SSD, 1 TB", with the drive model underneath), whatever the layout: one disk, several SSDs, hard disks, RAID or LVM, or network storage. Under Settings, Disks, you choose which disks may hold home folders and data folders, and turn on limits per disk. Per person you then choose where the home folder lives, which data disks are mounted, and how much they may fill on each.
 - Disk limits are kernel-enforced ext4 user quotas, not periodic scans. Container system files count against the person's limit on the disk that holds Docker's data.

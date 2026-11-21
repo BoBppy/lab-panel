@@ -12,7 +12,7 @@ jobs:
       - name: Python compiles
         run: python -m py_compile panel/*.py && python -c "import ast; ast.parse(open('panel/lab-ctl').read())"
       - name: JavaScript parses
-        run: node --check panel/static/app.js
+        run: node --check panel/static/app.js && node --check panel/static/theme.js
       - name: Shell scripts
         run: |
           sudo apt-get install -y -qq shellcheck

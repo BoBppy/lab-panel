@@ -25,6 +25,7 @@ function applyBrand(b) {
 fetch("/api/brand").then((r) => r.json()).then(applyBrand).catch(() => {});
 const PALETTE = ["--p2", "--p3", "--p4", "--p5", "--p6"];
 
+let PREFS = { mode: "auto", scheme: "pine", refresh: 5 }, LAST = 0;
 let ME = null, TAB = "overview", OV = null, USERS = [], timer = null, ENG = null, ENG_RENDERED = false;
 
 async function api(method, path, body) {
@@ -103,13 +104,36 @@ async function start() {
   $("#login").classList.add("hidden"); $("#app").classList.remove("hidden");
   $("#adminName").textContent = `${ME.user}, ${ME.role}`; 
   applyBrand(ME);
+  PREFS = ME.prefs || PREFS; window.labLook(PREFS);
   ME.storage.forEach((d) => (FSN[d.path] = d.label));
   api("GET", "system/updates").then((u) => ($("#updCount").textContent = u.upgradable.length || "")).catch(() => {});
   $$(".hostip").forEach((x) => (x.textContent = location.hostname));
   show(TAB);
-  clearInterval(timer);
-  timer = setInterval(() => { if (!document.hidden && !$("#dlg").open) refresh(); }, 5000);
+  startTimer();
 }
+// ------------------------------------------------------------------ refreshing: on a timer the person chooses, or by hand
+function startTimer() {
+  clearInterval(timer);
+  if (PREFS.refresh) timer = setInterval(() => { if (!document.hidden && !$("#dlg").open) refresh(); }, PREFS.refresh * 1000);
+  noteRefresh();
+}
+const everyStr = (n) => !n ? "Refreshing by hand only" : n < 60 ? `Every ${n} s` : "Every minute";
+function noteRefresh() {
+  const t = LAST ? new Date(LAST).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" }) : "";
+  $("#refreshNote").innerHTML = (t ? `<b>Updated ${t}</b><br>` : "") + esc(TAB === "settings" ? "Settings refresh by hand only" : everyStr(PREFS.refresh));
+}
+async function refreshNow() {
+  const b = $("#refreshBtn");
+  if (b.classList.contains("busy")) return;
+  b.classList.add("busy");
+  try { await reload(); } finally { b.classList.remove("busy"); }
+}
+$("#refreshBtn").addEventListener("click", refreshNow);
+document.addEventListener("keydown", (e) => {
+  if (e.key !== "r" || e.ctrlKey || e.metaKey || e.altKey || $("#app").classList.contains("hidden") || $("#dlg").open) return;
+  if (e.target.closest("input, textarea, select, [contenteditable]")) return;
+  e.preventDefault(); refreshNow();
+});
 function show(tab) {
   TAB = tab;
   if (tab === "llm") ENG_RENDERED = false;
@@ -117,10 +141,14 @@ function show(tab) {
   $$("main > section").forEach((s) => s.classList.toggle("hidden", s.id !== "tab-" + tab));
   reload();
 }
-// redraw the current tab now (after an action); the timer uses refresh(), which leaves Settings alone
-function reload() { if (TAB === "settings") loadSettings().catch(() => {}); else refresh(); }
+// redraw the current tab now (after an action or the Refresh button); the timer uses refresh(), which leaves Settings alone
+function reload() { return TAB === "settings" ? loadSettings().then(stamp, () => {}) : refresh(); }
 // Settings holds forms only and is not redrawn on the timer, so nothing typed there is lost; jobs poll their own logs.
-function refresh() { if (TAB === "settings") return; ({ overview: loadOverview, users: loadUsers, llm: loadLLM, audit: loadAudit })[TAB]().catch(() => {}); }
+function refresh() {
+  if (TAB === "settings") return Promise.resolve();
+  return ({ overview: loadOverview, users: loadUsers, llm: loadLLM, audit: loadAudit })[TAB]().then(stamp, () => {});
+}
+function stamp() { LAST = Date.now(); noteRefresh(); }
 
 // ------------------------------------------------------------------ overview: the shared-pool ledger
 function ledgerRow(name, sub, total, segs, totalText, totalSub) {
@@ -160,7 +188,8 @@ async function loadOverview() {
   $("#userCount").textContent = OV.users.length || "";
   renderLedger();
   const up = s.uptime / 86400;
-  $("#ovLede").textContent = `Live readings, refreshed every five seconds. Up ${up >= 1 ? up.toFixed(1) + " days" : (s.uptime / 3600).toFixed(1) + " hours"} since the last restart.`;
+  const every = { 0: "Readings refresh when you press Refresh.", 60: "Readings refresh every minute." }[PREFS.refresh] || `Readings refresh every ${PREFS.refresh} seconds.`;
+  $("#ovLede").textContent = `${every} Up ${up >= 1 ? up.toFixed(1) + " days" : (s.uptime / 3600).toFixed(1) + " hours"} since the last restart.`;
   $("#tiles").innerHTML = [
     ["GPU load", `${g.util ?? 0}<small>%</small>`, `${g.temp ?? "–"} °C, fan ${g.fan ?? "–"}%`, spark(col(3), 100, "var(--p2)")],
     ["GPU power", `${g.power != null ? g.power.toFixed(0) : "–"}<small>W</small>`, `limit ${g.power_limit?.toFixed(0) ?? "–"} W`, spark(col(5), g.power_limit, "var(--p6)")],
@@ -583,6 +612,7 @@ async function loadSettings() {
     $("#tfConfirm").addEventListener("click", async () => { await act(() => api("POST", "me/totp/confirm", { code: $("#tfCode").value }), "Two-factor sign-in is on."); ME.two_factor = true; loadSettings(); });
   });
   loadBrand();
+  loadLook();
   loadDisks(false).catch(() => {});
   if (ME.role === "owner") {
     const admins = await api("GET", "admins");
@@ -598,6 +628,34 @@ async function loadSettings() {
     $("#adminsTable").innerHTML = '<tbody><tr><td class="empty">Only an owner can manage panel admins.</td></tr></tbody>';
     $("#updBox").innerHTML = '<p class="sub">Only an owner can update the server.</p>';
   }
+}
+// ------------------------------------------------------------------ settings: appearance and refresh (per admin)
+const SCHEMES = [["pine", "Pine"], ["lake", "Lake"], ["heather", "Heather"], ["graphite", "Graphite"]];
+const MODES = [["auto", "Automatic"], ["light", "Light"], ["dark", "Dark"]];
+const EVERY = [[0, "Never, only by hand"], [2, "2 seconds"], [5, "5 seconds"], [10, "10 seconds"], [30, "30 seconds"], [60, "Minute"]];
+function loadLook() {
+  const mode = document.documentElement.dataset.mode;
+  $("#lookBox").innerHTML = `<div class="look">
+    <div><h3 id="modeH">Light or dark</h3><div class="seg" role="radiogroup" aria-labelledby="modeH">${MODES.map(([v, n]) =>
+      `<label><input type="radio" name="lookMode" value="${v}" ${PREFS.mode === v ? "checked" : ""}>${n}</label>`).join("")}</div>
+      <p class="hint look-hint">${PREFS.mode === "auto" ? "Follows the light or dark setting of your computer." : "Stays this way whatever your computer is set to."}</p></div>
+    <div><h3 id="schemeH">Colours</h3><div class="swatches" role="radiogroup" aria-labelledby="schemeH">${SCHEMES.map(([v, n]) =>
+      `<label class="swatch" data-scheme="${v}" data-mode="${mode}"><input type="radio" name="lookScheme" value="${v}" ${PREFS.scheme === v ? "checked" : ""}>
+        <span class="sw-art" aria-hidden="true"><i class="sw-side"><b></b><b></b></i><i class="sw-page"><u></u><u></u><u></u></i></span>${n}</label>`).join("")}</div></div>
+    <div><h3><label for="lookRefresh" class="inline-label">Refresh pages every</label></h3>
+      <select id="lookRefresh">${EVERY.map(([v, n]) => `<option value="${v}" ${PREFS.refresh === v ? "selected" : ""}>${n}</option>`).join("")}</select>
+      <p class="hint look-hint">Press R or use Refresh in the sidebar to refresh at any time. Settings never refresh on their own, so nothing you type is lost.</p></div></div>`;
+  const save = async (change) => {
+    const before = { ...PREFS };
+    Object.assign(PREFS, change); window.labLook(PREFS); startTimer(); loadLook();
+    const focus = Object.keys(change)[0];
+    (focus === "refresh" ? $("#lookRefresh") : $(`input[name="look${focus[0].toUpperCase() + focus.slice(1)}"]:checked`))?.focus();
+    try { PREFS = await api("PUT", "me/prefs", change); }
+    catch (e) { PREFS = before; window.labLook(PREFS); startTimer(); loadLook(); toast(e.message, true); }
+  };
+  $$('input[name="lookMode"]').forEach((i) => i.addEventListener("change", () => save({ mode: i.value })));
+  $$('input[name="lookScheme"]').forEach((i) => i.addEventListener("change", () => save({ scheme: i.value })));
+  $("#lookRefresh").addEventListener("change", (e) => save({ refresh: +e.target.value }));
 }
 // ------------------------------------------------------------------ settings: lab name and logo
 function loadBrand() {
