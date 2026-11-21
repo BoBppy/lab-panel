@@ -29,6 +29,7 @@ lab-panel is meant for a research group: people who are trusted not to attack ea
 - Owner, admin and viewer roles. Only owners manage admins and install system updates. Viewers cannot change anything or see API keys.
 - Optional TOTP two-factor sign-in per admin.
 - Every change is written to the activity log with who, what and when.
+- The lab logo is the only file anyone can upload. It must be a PNG, JPEG, WebP or SVG of at most 512 KB; SVGs with scripts, event handlers or embedded documents are refused. It is shown only through `<img>` and served with a sandboxing Content-Security-Policy, so even a crafted SVG opened directly cannot run.
 
 ## Baseline for the host (`scripts/harden.sh`)
 

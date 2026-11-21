@@ -18,6 +18,7 @@ It is built from the Python standard library, Podman, Docker and a few lines of 
 - Each container gets its own fixed range of 65,536 host uids, so its root is not the host's root and not any other person. Home and data folders are id-mapped: the person's files keep their real owner on disk, and files made with `sudo` belong to the container's own base uid, so nothing inside can create a file owned by host root.
 
 **Disks**
+- Owners set the lab's name and logo (PNG, JPEG, WebP or SVG) under Settings; they appear on the sign-in page, in the sidebar and on the browser tab. The logo is kept in `/etc/lab/logo.*`.
 - The panel finds the server's disks itself and names them from the hardware ("NVMe SSD, 1 TB", with the drive model underneath), whatever the layout: one disk, several SSDs, hard disks, RAID or LVM, or network storage. Under Settings, Disks, you choose which disks may hold home folders and data folders, and turn on limits per disk. Per person you then choose where the home folder lives, which data disks are mounted, and how much they may fill on each.
 - Disk limits are kernel-enforced ext4 user quotas, not periodic scans. Container system files count against the person's limit on the disk that holds Docker's data.
 
@@ -82,7 +83,7 @@ Everything host-specific lives in `/etc/lab/lab.json`. Missing keys take the def
 
 | Key | Meaning |
 |---|---|
-| `org` | Name shown in the panel and in the TLS certificate |
+| `org` | Lab name shown in the panel and in the TLS certificate; owners can change it under Settings, Lab name and logo |
 | `storage` | Disks people can use; normally edited in the panel. `path` (mount point; limits apply here), `homes` (where home folders may live), `data` (parent of per-person data folders), optional `label` to replace the automatic name |
 | `default_quota_gb` | Limits for new people, per disk path |
 | `container_fs` | Disk that holds container system files; empty = detect from Docker |

@@ -234,18 +234,102 @@ def save_storage(rows, actor="cli"):
         for k in ("homes", "data"):
             if e.get(k):
                 os.makedirs(e[k], mode=0o755, exist_ok=True)
+    update_conf(storage=new)
+    reload_storage()
+    audit(actor, "storage", "", {e["path"]: [k for k in ("homes", "data") if e.get(k)] for e in new})
+
+
+def update_conf(**kv):
+    """Change some keys of lab.json in place, atomically, keeping everything else."""
     try:
         c = json.load(open(CONF_PATH))
     except FileNotFoundError:
         c = {}
-    c["storage"] = new
+    c.update(kv)
     tmp = CONF_PATH + ".tmp"
     with open(tmp, "w") as f:
-        json.dump(c, f, indent=2)
+        json.dump(c, f, indent=2, ensure_ascii=False)
     os.chmod(tmp, 0o644)
     os.replace(tmp, CONF_PATH)
-    reload_storage()
-    audit(actor, "storage", "", {e["path"]: [k for k in ("homes", "data") if e.get(k)] for e in new})
+
+
+# ---------------------------------------------------------------- lab name and logo
+LOGO_BASE = os.path.join(os.path.dirname(CONF_PATH), "logo")
+LOGO_TYPES = {"png": "image/png", "jpg": "image/jpeg", "webp": "image/webp", "svg": "image/svg+xml"}
+LOGO_MAX = 512 * 1024
+
+
+def logo_file():
+    for ext in LOGO_TYPES:
+        f = f"{LOGO_BASE}.{ext}"
+        if os.path.isfile(f):
+            return f, LOGO_TYPES[ext]
+    return None, None
+
+
+def brand():
+    """What the sign-in page and the sidebar show. The logo URL changes whenever the file does."""
+    f, _ = logo_file()
+    return {"org": conf()["org"], "logo": f"/api/brand/logo?v={os.stat(f).st_mtime_ns}" if f else ""}
+
+
+def _logo_ext(data):
+    if data.startswith(b"\x89PNG\r\n\x1a\n"):
+        return "png"
+    if data.startswith(b"\xff\xd8\xff"):
+        return "jpg"
+    if data[:4] == b"RIFF" and data[8:12] == b"WEBP":
+        return "webp"
+    try:
+        text = data.decode("utf-8-sig").lstrip()
+    except UnicodeDecodeError:
+        return None
+    if re.match(r"^(<\?xml[^>]*\?>\s*)?(<!--.*?-->\s*)*<svg[\s>]", text, re.S):
+        # it is only ever shown through <img> and served sandboxed, but refuse active content anyway
+        if re.search(r"<!DOCTYPE|<!ENTITY|<script|<foreignObject|\son[a-z]+\s*=|javascript:", text, re.I):
+            raise LabError("this SVG contains scripts or embedded documents; export it again as a plain SVG or PNG")
+        return "svg"
+    return None
+
+
+def save_brand(org=None, logo=None, actor="cli"):
+    """org: new lab name. logo: None leaves it, "" goes back to the built-in mark, bytes replace it."""
+    changed = []
+    if org is not None:
+        org = " ".join(str(org).split())
+        if not org:
+            raise LabError("the lab needs a name")
+        if len(org) > 60:
+            raise LabError("the lab name can be at most 60 characters")
+        if re.search(r"[\x00-\x1f\x7f<>]", org):
+            raise LabError("the lab name cannot contain < or > or control characters")
+        if org != conf()["org"]:
+            update_conf(org=org)
+            changed.append(f"name: {org}")
+    if logo is not None:
+        old, _ = logo_file()
+        if logo == b"" or logo == "":
+            if old:
+                os.remove(old)
+                changed.append("logo: built-in")
+        else:
+            if len(logo) > LOGO_MAX:
+                raise LabError("the logo can be at most 512 KB; a 256 × 256 PNG or an SVG is plenty")
+            ext = _logo_ext(logo)
+            if not ext:
+                raise LabError("the logo must be a PNG, JPEG, WebP or SVG image")
+            tmp = f"{LOGO_BASE}.tmp"
+            with open(tmp, "wb") as f:
+                f.write(logo)
+            os.chmod(tmp, 0o644)
+            os.replace(tmp, f"{LOGO_BASE}.{ext}")
+            for e in LOGO_TYPES:
+                if e != ext and os.path.isfile(f"{LOGO_BASE}.{e}"):
+                    os.remove(f"{LOGO_BASE}.{e}")
+            changed.append(f"logo: {ext}, {len(logo)} bytes")
+    if changed:
+        audit(actor, "brand", "", "; ".join(changed))
+    return brand()
 
 
 def container_fs():

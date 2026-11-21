@@ -12,7 +12,16 @@ const ago = (ts) => { if (!ts) return "never"; const s = Date.now() / 1000 - ts;
 const memStr = (m) => { if (!m) return "no memory limit"; const n = parseInt(m); return (m.endsWith("g") ? n : (n / 1024).toFixed(1)) + " GB memory"; };
 const gb = (mib) => (mib / 1024).toFixed(1) + " GB";
 const FSN = {};   // filesystem path -> disk label, filled from /api/me
-fetch("/api/brand").then((r) => r.json()).then((b) => { document.title = `${b.org} server`; $$(".login-card h1, .brand b").forEach((x) => (x.textContent = b.org)); }).catch(() => {});
+// lab name and logo: sign-in card, sidebar, browser tab
+const MARK = $(".brand .mark").innerHTML, ICON = $('link[rel="icon"]').href;
+const markHTML = (logo) => logo ? `<img src="${esc(logo)}" alt="">` : MARK;
+function applyBrand(b) {
+  document.title = `${b.org} server`;
+  $$(".login-card h1, .side .brand b").forEach((x) => (x.textContent = b.org));
+  $$(".login-card .mark, .side .brand .mark").forEach((m) => { m.classList.toggle("logo", !!b.logo); m.innerHTML = markHTML(b.logo); });
+  $('link[rel="icon"]').href = b.logo || ICON;
+}
+fetch("/api/brand").then((r) => r.json()).then(applyBrand).catch(() => {});
 const PALETTE = ["--p2", "--p3", "--p4", "--p5", "--p6"];
 
 let ME = null, TAB = "overview", OV = null, USERS = [], timer = null, ENG = null, ENG_RENDERED = false;
@@ -92,9 +101,8 @@ async function start() {
   try { ME = await api("GET", "me"); } catch (e) { return; }
   $("#login").classList.add("hidden"); $("#app").classList.remove("hidden");
   $("#adminName").textContent = `${ME.user}, ${ME.role}`; $("#hostName").textContent = `${ME.host} server`;
-  $$(".login-card h1, .brand b").forEach((x) => (x.textContent = ME.org));
+  applyBrand(ME);
   ME.storage.forEach((d) => (FSN[d.path] = d.label));
-  document.title = `${ME.org} server`;
   api("GET", "system/updates").then((u) => ($("#updCount").textContent = u.upgradable.length || "")).catch(() => {});
   $$(".hostip").forEach((x) => (x.textContent = location.hostname));
   show(TAB);
@@ -106,9 +114,12 @@ function show(tab) {
   if (tab === "llm") ENG_RENDERED = false;
   $$("#tabs button").forEach((b) => b.classList.toggle("on", b.dataset.tab === tab));
   $$("main > section").forEach((s) => s.classList.toggle("hidden", s.id !== "tab-" + tab));
-  refresh();
+  reload();
 }
-function refresh() { ({ overview: loadOverview, users: loadUsers, llm: loadLLM, audit: loadAudit, settings: loadSettings })[TAB]().catch(() => {}); }
+// redraw the current tab now (after an action); the timer uses refresh(), which leaves Settings alone
+function reload() { if (TAB === "settings") loadSettings().catch(() => {}); else refresh(); }
+// Settings holds forms only and is not redrawn on the timer, so nothing typed there is lost; jobs poll their own logs.
+function refresh() { if (TAB === "settings") return; ({ overview: loadOverview, users: loadUsers, llm: loadLLM, audit: loadAudit })[TAB]().catch(() => {}); }
 
 // ------------------------------------------------------------------ overview: the shared-pool ledger
 function ledgerRow(name, sub, total, segs, totalText, totalSub) {
@@ -219,7 +230,7 @@ $("#userFilter").addEventListener("input", renderUsers);
 $("#usersTable").addEventListener("click", (e) => { const r = e.target.closest("tr[data-user]"); if (r) openUser(r.dataset.user); });
 
 function dialog(html, kind = "drawer") { const d = $("#dlg"); d.className = kind; $("#dlgBody").innerHTML = html; if (!d.open) d.showModal(); return d; }
-function closeDlg() { $("#dlg").close(); refresh(); }
+function closeDlg() { $("#dlg").close(); reload(); }
 $("#dlg").addEventListener("click", (e) => { if (e.target.closest("[data-close]") || e.target === $("#dlg")) closeDlg(); });
 
 function randomPw() {
@@ -458,7 +469,7 @@ $$("[data-strata]").forEach((b) => b.addEventListener("click", async () => {
   if (a !== "start" && !confirm(`${b.textContent}? Answers in progress are cut off, and loading takes one to two minutes.`)) return;
   b.disabled = true;
   await act(() => api("POST", "strata", { action: a }), `${label} the engine.`).catch(() => {});
-  b.disabled = false; refresh();
+  b.disabled = false; reload();
 }));
 
 // ------------------------------------------------------------------ engine settings
@@ -542,7 +553,7 @@ const ACTIONS = { "user-add": "Added person", "user-edit": "Changed settings", "
   password: "Set password", "ssh-key-add": "Added SSH key", "ssh-key-remove": "Removed SSH key", "llm-key-regenerate": "Replaced model key", "llm-key-view": "Viewed model key",
   quota: "Changed disk limits", "home-move": "Moved home folder", login: "Signed in", "login-failed": "Failed sign-in", "engine-apply": "Applied engine settings",
   "engine-apply-failed": "Engine settings failed", "engine-pull": "Downloaded engine version", "admin-password": "Set admin password", "admin-save": "Changed panel admin", "admin-delete": "Removed panel admin",
-  "two-factor-on": "Turned on two-factor sign-in", "two-factor-off": "Turned off two-factor sign-in", storage: "Changed disk settings", "disk-limits": "Turned on disk limits", "system-upgrade": "Installed server updates", reboot: "Restarted the server" };
+  "two-factor-on": "Turned on two-factor sign-in", "two-factor-off": "Turned off two-factor sign-in", storage: "Changed disk settings", brand: "Changed the lab name or logo", "disk-limits": "Turned on disk limits", "system-upgrade": "Installed server updates", reboot: "Restarted the server" };
 async function loadAudit() {
   const rows = await api("GET", "audit");
   $("#auditTable").innerHTML = `<thead><tr><th>Time</th><th>By</th><th>What</th><th>Who or what</th><th>Details</th></tr></thead><tbody>${rows.map((r) => `<tr><td>${fmtT(r.ts)}</td><td>${esc(r.actor)}</td><td>${esc(ACTIONS[r.action] || r.action.replace(/-/g, " "))}</td><td>${esc(r.target)}</td><td class="sub" style="white-space:normal;max-width:520px;overflow-wrap:anywhere">${esc(r.detail)}</td></tr>`).join("") || '<tr><td colspan="5" class="empty">Nothing yet.</td></tr>'}</tbody>`;
@@ -570,6 +581,7 @@ async function loadSettings() {
       <div class="inline"><input id="tfCode" inputmode="numeric" placeholder="6-digit code"><button class="btn primary" id="tfConfirm">Turn on</button></div>`;
     $("#tfConfirm").addEventListener("click", async () => { await act(() => api("POST", "me/totp/confirm", { code: $("#tfCode").value }), "Two-factor sign-in is on."); ME.two_factor = true; loadSettings(); });
   });
+  loadBrand();
   loadDisks(false).catch(() => {});
   if (ME.role === "owner") {
     const admins = await api("GET", "admins");
@@ -585,6 +597,44 @@ async function loadSettings() {
     $("#adminsTable").innerHTML = '<tbody><tr><td class="empty">Only an owner can manage panel admins.</td></tr></tbody>';
     $("#updBox").innerHTML = '<p class="sub">Only an owner can update the server.</p>';
   }
+}
+// ------------------------------------------------------------------ settings: lab name and logo
+function loadBrand() {
+  const own = ME.role === "owner";
+  let logo = ME.logo, pending;          // pending: undefined = unchanged, "" = built-in mark, data URL = new image
+  const preview = () => {
+    const name = ($("#brandName")?.value || "").trim() || ME.org, l = pending === undefined ? logo : pending;
+    $("#brandPreview").innerHTML = `<div class="brand"><div class="mark ${l ? "logo" : ""}">${markHTML(l)}</div>
+      <div><b>${esc(name)}</b><span>${esc(ME.host)} server</span></div></div>`;
+    $("#brandReset") && ($("#brandReset").disabled = !l);
+  };
+  $("#brandBox").innerHTML = `<div id="brandPreview" class="brand-preview" aria-label="Preview of the sidebar"></div>
+    <div class="brand-fields">${own ? `
+      <label>Lab name<input id="brandName" value="${esc(ME.org)}" maxlength="60" autocomplete="organization"></label>
+      <div class="brand-logo"><span class="label">Logo</span>
+        <div class="inline"><label class="btn file">Choose image<input type="file" id="brandFile" accept="image/png,image/jpeg,image/webp,image/svg+xml"></label>
+          <button class="btn" id="brandReset">Use the built-in mark</button></div>
+        <span class="hint">A square PNG, JPEG, WebP or SVG up to 512 KB. It appears on the sign-in page, in the sidebar and on the browser tab.</span></div>
+      <div><button class="btn primary" id="brandSave">Save name and logo</button></div>`
+    : `<p class="sub">Only an owner can change the lab name and logo.</p>`}</div>`;
+  preview();
+  if (!own) return;
+  $("#brandName").addEventListener("input", preview);
+  $("#brandFile").addEventListener("change", (e) => {
+    const f = e.target.files[0]; e.target.value = "";
+    if (!f) return;
+    if (f.size > 512 * 1024) return toast("That image is larger than 512 KB. Export a smaller one, 256 × 256 pixels is plenty.", true);
+    const rd = new FileReader();
+    rd.onload = () => { pending = rd.result; preview(); };
+    rd.readAsDataURL(f);
+  });
+  $("#brandReset").addEventListener("click", () => { pending = ""; preview(); });
+  $("#brandSave").addEventListener("click", async () => {
+    const body = { org: $("#brandName").value };
+    if (pending !== undefined) body.logo = pending;
+    const b = await act(() => api("PUT", "system/brand", body), "Lab name and logo saved.");
+    Object.assign(ME, b); logo = b.logo; pending = undefined; applyBrand(b); preview();
+  });
 }
 // ------------------------------------------------------------------ settings: disks found on this server
 async function loadDisks(refresh) {

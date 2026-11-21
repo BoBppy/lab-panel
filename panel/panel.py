@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Lab admin panel: HTTPS web UI + JSON API for users, containers, resources and LLM usage.
 Python stdlib only; runs as root (it manages accounts and Docker)."""
+import base64
 import collections
 import http.client
 import json
@@ -475,16 +476,12 @@ class Handler(BaseHTTPRequestHandler):
     def send(self, status, body, ctype="application/json", extra=None):
         if not isinstance(body, bytes):
             body = json.dumps(body, default=str).encode()
+        hdrs = {"Content-Type": ctype, "Content-Length": str(len(body)), "Cache-Control": "no-store",
+                "X-Content-Type-Options": "nosniff", "X-Frame-Options": "DENY", "Referrer-Policy": "no-referrer",
+                "Content-Security-Policy": "default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; frame-ancestors 'none'"}
+        hdrs.update(extra or {})
         self.send_response(status)
-        self.send_header("Content-Type", ctype)
-        self.send_header("Content-Length", str(len(body)))
-        self.send_header("Cache-Control", "no-store")
-        self.send_header("X-Content-Type-Options", "nosniff")
-        self.send_header("X-Frame-Options", "DENY")
-        self.send_header("Referrer-Policy", "no-referrer")
-        self.send_header("Content-Security-Policy",
-                         "default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; frame-ancestors 'none'")
-        for k, v in (extra or {}).items():
+        for k, v in hdrs.items():
             self.send_header(k, v)
         self.end_headers()
         self.wfile.write(body)
@@ -519,6 +516,9 @@ class Handler(BaseHTTPRequestHandler):
     def do_PATCH(self):
         self.dispatch("PATCH")
 
+    def do_PUT(self):
+        self.dispatch("PUT")
+
     def do_DELETE(self):
         self.dispatch("DELETE")
 
@@ -531,7 +531,9 @@ class Handler(BaseHTTPRequestHandler):
             if path == "/api/login" and method == "POST":
                 return self.login()
             if path == "/api/brand" and method == "GET":      # shown on the sign-in page
-                return self.send(200, {"org": L.conf()["org"]})
+                return self.send(200, L.brand())
+            if path == "/api/brand/logo" and method == "GET":
+                return self.logo()
             admin = self.session()
             if not admin:
                 return self.send(401, {"error": "login required"})
@@ -552,6 +554,15 @@ class Handler(BaseHTTPRequestHandler):
         except Exception as e:
             print("error:", method, path, repr(e), flush=True)
             return self.send(500, {"error": f"internal error: {e}"})
+
+    def logo(self):
+        f, ctype = L.logo_file()
+        if not f:
+            return self.send(404, b"no logo", "text/plain")
+        # URLs carry ?v=<mtime>, so the file can be cached; sandboxed so an SVG can never run as a page
+        self.send(200, open(f, "rb").read(), ctype,
+                  extra={"Cache-Control": "public, max-age=86400",
+                         "Content-Security-Policy": "default-src 'none'; style-src 'unsafe-inline'; sandbox"})
 
     def static(self, path):
         name = {"/": "index.html"}.get(path, path.lstrip("/"))
@@ -602,7 +613,7 @@ class Handler(BaseHTTPRequestHandler):
                 SESS.pop(m.group(1) if m else "", None)
             return self.send(200, {"ok": True}, extra={"Set-Cookie": "rlsess=; Max-Age=0; Path=/; Secure"})
         if method == "GET" and parts == ["me"]:
-            return self.send(200, {"user": admin, "org": C["org"], "host": os.uname().nodename,
+            return self.send(200, {"user": admin, **L.brand(), "host": os.uname().nodename,
                                    "gateway_port": C["gateway_port"], "model": L.conf()["model"], "ncpu": os.cpu_count(),
                                    "home_bases": {d["homes"]: f"{d['label']} ({d['homes']})" for d in L.storage_view() if d.get("homes")}, "quota_fs": [fs for fs in L.QUOTA_FS if L.quotas_enabled(fs)],
                                    "default_quota_gb": L.conf().get("default_quota_gb", {}),
@@ -668,7 +679,7 @@ class Handler(BaseHTTPRequestHandler):
         if parts == ["me", "totp", "start"] and method == "POST":
             sec = L.new_totp_secret()
             PENDING_TOTP[admin] = sec
-            org = re.sub(r"[^A-Za-z0-9]", "", C["org"]) or "Lab"
+            org = re.sub(r"[^A-Za-z0-9]", "", L.conf()["org"]) or "Lab"
             return self.send(200, {"secret": sec, "uri": f"otpauth://totp/{org}:{admin}?secret={sec}&issuer={org}"})
         if parts == ["me", "totp", "confirm"] and method == "POST":
             sec = PENDING_TOTP.get(admin)
@@ -700,6 +711,17 @@ class Handler(BaseHTTPRequestHandler):
                 raise L.LabError("you cannot delete your own account")
             L.delete_admin(L.valid_name(parts[1]), admin)
             return self.send(200, {"ok": True})
+        if parts == ["system", "brand"] and method == "PUT":
+            b = self.body_json()
+            logo = b.get("logo")
+            if isinstance(logo, str) and logo:
+                m = re.match(r"^data:[\w/+.-]+;base64,([A-Za-z0-9+/=\s]+)$", logo)
+                if not m:
+                    raise L.LabError("send the logo as a base64 data URL")
+                logo = base64.b64decode(m.group(1))
+            elif logo is not None and logo != "":
+                raise L.LabError("bad logo")
+            return self.send(200, L.save_brand(org=b.get("org"), logo=logo, actor=admin))
         if parts == ["system", "disks"] and method == "GET":
             cfg = {s["path"]: s for s in L.STORAGE}
             homes = [L.pwd.getpwnam(u).pw_dir for u in L.lab_members()]

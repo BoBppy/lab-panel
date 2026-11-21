@@ -246,3 +246,20 @@ dialog.center { width: min(720px, 94vw); border-radius: 10px; border: 1px solid 
 .disk-name .dlabel { width: 100%; max-width: 260px; font-weight: 600; }
 .disk-name .sub { display: block; }
 .disk-foot { display: flex; gap: 14px; align-items: center; flex-wrap: wrap; padding-top: 12px; padding-bottom: 14px; }
+
+/* lab logo in place of the built-in mark: a light tile so any colours read on the dark sidebar */
+.mark.logo { background: #fff; padding: 3px; }
+.mark.logo img { width: 100%; height: 100%; object-fit: contain; display: block; border-radius: 4px; }
+.mark.big.logo { padding: 5px; box-shadow: inset 0 0 0 1px var(--rule); }
+/* settings: lab name and logo */
+.brand-edit { display: grid; grid-template-columns: 232px 1fr; gap: 24px; align-items: start; }
+.brand-preview { background: var(--pine); border-radius: 8px; padding: 18px 14px; }
+.brand-preview .brand { padding: 0; }
+.brand-preview .brand b { overflow-wrap: anywhere; }
+.brand-fields { display: grid; gap: 14px; max-width: 520px; }
+.brand-logo { display: grid; gap: 6px; }
+.brand-logo .label { font-weight: 600; font-size: 13px; }
+.btn.file { position: relative; overflow: hidden; display: inline-block; font-weight: 500; }
+.btn.file input { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
+.btn.file:focus-within { box-shadow: var(--focus); }
+@media (max-width: 720px) { .brand-edit { grid-template-columns: 1fr; } }
