@@ -84,6 +84,7 @@ Everything host-specific lives in `/etc/lab/lab.json`. Missing keys take the def
 | Key | Meaning |
 |---|---|
 | `org` | Lab name shown in the panel and in the TLS certificate; owners can change it under Settings, Lab name and logo |
+| `subtitle` | Line under the name in the sidebar; empty shows `<host name> server` |
 | `storage` | Disks people can use; normally edited in the panel. `path` (mount point; limits apply here), `homes` (where home folders may live), `data` (parent of per-person data folders), optional `label` to replace the automatic name |
 | `default_quota_gb` | Limits for new people, per disk path |
 | `container_fs` | Disk that holds container system files; empty = detect from Docker |

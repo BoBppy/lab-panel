@@ -34,6 +34,7 @@ CPUSET_RE = re.compile(r"^[0-9]{1,2}(-[0-9]{1,2})?(,[0-9]{1,2}(-[0-9]{1,2})?){0,
 
 DEFAULTS = {
     "org": "Lab",
+    "subtitle": "",                   # line under the name in the sidebar; empty = "<hostname> server"
     "panel_listen": "0.0.0.0", "panel_port": 39743,
     "gateway_listen": "0.0.0.0", "gateway_port": 39700,
     "strata_port": 39701,
@@ -270,7 +271,10 @@ def logo_file():
 def brand():
     """What the sign-in page and the sidebar show. The logo URL changes whenever the file does."""
     f, _ = logo_file()
-    return {"org": conf()["org"], "logo": f"/api/brand/logo?v={os.stat(f).st_mtime_ns}" if f else ""}
+    c = conf()
+    return {"org": c["org"], "subtitle": c.get("subtitle") or f"{os.uname().nodename} server",
+            "subtitle_custom": c.get("subtitle") or "", "subtitle_default": f"{os.uname().nodename} server",
+            "logo": f"/api/brand/logo?v={os.stat(f).st_mtime_ns}" if f else ""}
 
 
 def _logo_ext(data):
@@ -292,17 +296,28 @@ def _logo_ext(data):
     return None
 
 
-def save_brand(org=None, logo=None, actor="cli"):
-    """org: new lab name. logo: None leaves it, "" goes back to the built-in mark, bytes replace it."""
+def _brand_text(v, what):
+    v = " ".join(str(v).split())
+    if len(v) > 60:
+        raise LabError(f"the {what} can be at most 60 characters")
+    if re.search(r"[\x00-\x1f\x7f<>]", v):
+        raise LabError(f"the {what} cannot contain < or > or control characters")
+    return v
+
+
+def save_brand(org=None, logo=None, subtitle=None, actor="cli"):
+    """org: new lab name. subtitle: line under it, "" = "<hostname> server".
+    logo: None leaves it, "" goes back to the built-in mark, bytes replace it."""
     changed = []
+    if subtitle is not None:
+        subtitle = _brand_text(subtitle, "line under the name")
+        if subtitle != (conf().get("subtitle") or ""):
+            update_conf(subtitle=subtitle)
+            changed.append(f"subtitle: {subtitle or '(host name)'}")
     if org is not None:
-        org = " ".join(str(org).split())
+        org = _brand_text(org, "lab name")
         if not org:
             raise LabError("the lab needs a name")
-        if len(org) > 60:
-            raise LabError("the lab name can be at most 60 characters")
-        if re.search(r"[\x00-\x1f\x7f<>]", org):
-            raise LabError("the lab name cannot contain < or > or control characters")
         if org != conf()["org"]:
             update_conf(org=org)
             changed.append(f"name: {org}")

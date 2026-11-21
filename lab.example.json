@@ -1,5 +1,6 @@
 {
   "org": "Physics Lab",
+  "subtitle": "",
 
   "panel_listen": "0.0.0.0", "panel_port": 39743,
   "gateway_listen": "0.0.0.0", "gateway_port": 39700,

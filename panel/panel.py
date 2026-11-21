@@ -721,7 +721,7 @@ class Handler(BaseHTTPRequestHandler):
                 logo = base64.b64decode(m.group(1))
             elif logo is not None and logo != "":
                 raise L.LabError("bad logo")
-            return self.send(200, L.save_brand(org=b.get("org"), logo=logo, actor=admin))
+            return self.send(200, L.save_brand(org=b.get("org"), logo=logo, subtitle=b.get("subtitle"), actor=admin))
         if parts == ["system", "disks"] and method == "GET":
             cfg = {s["path"]: s for s in L.STORAGE}
             homes = [L.pwd.getpwnam(u).pw_dir for u in L.lab_members()]

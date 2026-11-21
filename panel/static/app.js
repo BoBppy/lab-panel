@@ -18,6 +18,7 @@ const markHTML = (logo) => logo ? `<img src="${esc(logo)}" alt="">` : MARK;
 function applyBrand(b) {
   document.title = `${b.org} server`;
   $$(".login-card h1, .side .brand b").forEach((x) => (x.textContent = b.org));
+  if (b.subtitle) $("#hostName").textContent = b.subtitle;
   $$(".login-card .mark, .side .brand .mark").forEach((m) => { m.classList.toggle("logo", !!b.logo); m.innerHTML = markHTML(b.logo); });
   $('link[rel="icon"]').href = b.logo || ICON;
 }
@@ -100,7 +101,7 @@ $("#tabs").addEventListener("click", (e) => { const b = e.target.closest("button
 async function start() {
   try { ME = await api("GET", "me"); } catch (e) { return; }
   $("#login").classList.add("hidden"); $("#app").classList.remove("hidden");
-  $("#adminName").textContent = `${ME.user}, ${ME.role}`; $("#hostName").textContent = `${ME.host} server`;
+  $("#adminName").textContent = `${ME.user}, ${ME.role}`; 
   applyBrand(ME);
   ME.storage.forEach((d) => (FSN[d.path] = d.label));
   api("GET", "system/updates").then((u) => ($("#updCount").textContent = u.upgradable.length || "")).catch(() => {});
@@ -604,13 +605,16 @@ function loadBrand() {
   let logo = ME.logo, pending;          // pending: undefined = unchanged, "" = built-in mark, data URL = new image
   const preview = () => {
     const name = ($("#brandName")?.value || "").trim() || ME.org, l = pending === undefined ? logo : pending;
+    const sub = $("#brandSub") ? ($("#brandSub").value.trim() || ME.subtitle_default) : ME.subtitle;
     $("#brandPreview").innerHTML = `<div class="brand"><div class="mark ${l ? "logo" : ""}">${markHTML(l)}</div>
-      <div><b>${esc(name)}</b><span>${esc(ME.host)} server</span></div></div>`;
+      <div><b>${esc(name)}</b><span>${esc(sub)}</span></div></div>`;
     $("#brandReset") && ($("#brandReset").disabled = !l);
   };
   $("#brandBox").innerHTML = `<div id="brandPreview" class="brand-preview" aria-label="Preview of the sidebar"></div>
     <div class="brand-fields">${own ? `
       <label>Lab name<input id="brandName" value="${esc(ME.org)}" maxlength="60" autocomplete="organization"></label>
+      <label>Line under the name<input id="brandSub" value="${esc(ME.subtitle_custom)}" maxlength="60" placeholder="${esc(ME.subtitle_default)}">
+        <span class="hint">For example the server's purpose or room. Leave it empty to show the server's host name.</span></label>
       <div class="brand-logo"><span class="label">Logo</span>
         <div class="inline"><label class="btn file">Choose image<input type="file" id="brandFile" accept="image/png,image/jpeg,image/webp,image/svg+xml"></label>
           <button class="btn" id="brandReset">Use the built-in mark</button></div>
@@ -620,6 +624,7 @@ function loadBrand() {
   preview();
   if (!own) return;
   $("#brandName").addEventListener("input", preview);
+  $("#brandSub").addEventListener("input", preview);
   $("#brandFile").addEventListener("change", (e) => {
     const f = e.target.files[0]; e.target.value = "";
     if (!f) return;
@@ -630,7 +635,7 @@ function loadBrand() {
   });
   $("#brandReset").addEventListener("click", () => { pending = ""; preview(); });
   $("#brandSave").addEventListener("click", async () => {
-    const body = { org: $("#brandName").value };
+    const body = { org: $("#brandName").value, subtitle: $("#brandSub").value };
     if (pending !== undefined) body.logo = pending;
     const b = await act(() => api("PUT", "system/brand", body), "Lab name and logo saved.");
     Object.assign(ME, b); logo = b.logo; pending = undefined; applyBrand(b); preview();
