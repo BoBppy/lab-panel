@@ -616,5 +616,21 @@
   "Manual": "手动刷新",
   "Automatic refresh is off.": "已关闭自动刷新。",
   "Settings never refresh on their own, so nothing you type is lost.": "设置页面不会自动刷新，输入的内容不会丢失。",
-  "Press R or use the ring at the bottom of the sidebar to refresh at any time.": "随时按 R 或点击侧栏底部的圆环即可刷新。"
+  "Press R or use the ring at the bottom of the sidebar to refresh at any time.": "随时按 R 或点击侧栏底部的圆环即可刷新。",
+  "Open the downloaded file; Keychain Access adds it. Double-click the certificate there, open Trust, set “When using this certificate” to “Always Trust”, then close the window and confirm with your password.": "打开下载的文件，“钥匙串访问”会添加它。在其中双击该证书，展开“信任”，把“使用此证书时”设为“始终信任”，然后关闭窗口并输入密码确认。",
+  "Open the downloaded file and choose Install Certificate. Pick Current User, then “Place all certificates in the following store”, Browse, “Trusted Root Certification Authorities”, and finish.": "打开下载的文件，选择“安装证书”。选“当前用户”，再选“将所有的证书都放入下列存储”，点“浏览”，选“受信任的根证书颁发机构”，然后完成。",
+  "In Chrome or Edge: Settings › Privacy and security › Security › Manage certificates, then import it under Authorities and tick “Trust this certificate for identifying websites”.": "在 Chrome 或 Edge 中：设置 › 隐私和安全 › 安全 › 管理证书，在“授权机构”下导入它，并勾选“信任该证书，以标识网站的身份”。",
+  "Open the download in Safari and allow it. In Settings › General › VPN & Device Management, install the profile, then turn on full trust in Settings › General › About › Certificate Trust Settings.": "在 Safari 中打开下载并允许。到 设置 › 通用 › VPN 与设备管理 安装描述文件，再到 设置 › 通用 › 关于本机 › 证书信任设置 中打开完全信任。",
+  "In Settings, search for “CA certificate” (under Security › Encryption & credentials › Install a certificate) and choose the downloaded file. Menu names vary by maker.": "在“设置”中搜索“CA 证书”（位于 安全 › 加密与凭据 › 安装证书），然后选择下载的文件。各厂商的菜单名称可能不同。",
+  "Firefox keeps its own list: Settings › Privacy & Security › Certificates › View Certificates › Authorities › Import, then tick “Trust this CA to identify websites”.": "Firefox 使用自己的证书列表：设置 › 隐私与安全 › 证书 › 查看证书 › 证书颁发机构 › 导入，然后勾选“信任由此证书颁发机构来标识网站”。",
+  "Browsers warn because the panel is reached by a local address or name, which public certificate authorities do not cover. This server has its own lab certificate instead: install it once on each computer and phone, and the warning goes away.": "浏览器会警告，是因为面板通过局域网地址或本地名称访问，公共证书机构不为这类地址签发证书。本服务器有自己的实验室证书：在每台电脑和手机上安装一次，警告就会消失。",
+  "Download the lab certificate": "下载实验室证书",
+  "Restart the browser afterwards. Before trusting the file, check that your system shows this SHA-256 fingerprint. An owner can print it on the server with {cmd}.": "安装后请重启浏览器。信任该文件之前，请确认系统显示的 SHA-256 指纹与下面一致。管理员可以在服务器上用 {cmd} 查看。",
+  "The lab certificate can only vouch for local addresses and names, never for public websites, so installing it does not weaken anything else.": "实验室证书只能为本地地址和名称担保，不能为任何公共网站担保，所以安装它不会削弱其他方面的安全。",
+  "Panel certificate": "面板证书",
+  "Issued by this server's lab certificate and renewed automatically. Valid until {date}.": "由本服务器的实验室证书签发，自动续期。有效期至 {date}。",
+  "Works at": "适用地址",
+  "This server uses its own certificate, issued by {issuer}, valid until {date}. Browsers trust it when they trust that authority.": "本服务器使用自己的证书，由 {issuer} 签发，有效期至 {date}。浏览器信任该机构时就会信任它。",
+  "Seeing a browser warning?": "浏览器显示安全警告？",
+  "Browser certificate": "浏览器证书"
 }

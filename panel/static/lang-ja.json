@@ -616,5 +616,21 @@
   "Manual": "手動",
   "Automatic refresh is off.": "自動更新はオフです。",
   "Settings never refresh on their own, so nothing you type is lost.": "設定ページは自動更新されないので、入力中の内容は失われません。",
-  "Press R or use the ring at the bottom of the sidebar to refresh at any time.": "R キーかサイドバー下部のリングで、いつでも更新できます。"
+  "Press R or use the ring at the bottom of the sidebar to refresh at any time.": "R キーかサイドバー下部のリングで、いつでも更新できます。",
+  "Open the downloaded file; Keychain Access adds it. Double-click the certificate there, open Trust, set “When using this certificate” to “Always Trust”, then close the window and confirm with your password.": "ダウンロードしたファイルを開くと、キーチェーンアクセスに追加されます。そこで証明書をダブルクリックし、「信頼」を開いて「この証明書を使用するとき」を「常に信頼」にし、ウインドウを閉じてパスワードで確定します。",
+  "Open the downloaded file and choose Install Certificate. Pick Current User, then “Place all certificates in the following store”, Browse, “Trusted Root Certification Authorities”, and finish.": "ダウンロードしたファイルを開き、「証明書のインストール」を選びます。「現在のユーザー」を選び、「証明書をすべて次のストアに配置する」→「参照」→「信頼されたルート証明機関」を選んで完了します。",
+  "In Chrome or Edge: Settings › Privacy and security › Security › Manage certificates, then import it under Authorities and tick “Trust this certificate for identifying websites”.": "Chrome または Edge で：設定 › プライバシーとセキュリティ › セキュリティ › 証明書の管理 を開き、「認証局」にインポートして「この証明書をウェブサイトの識別に使用する」にチェックを入れます。",
+  "Open the download in Safari and allow it. In Settings › General › VPN & Device Management, install the profile, then turn on full trust in Settings › General › About › Certificate Trust Settings.": "Safari でダウンロードを開いて許可します。設定 › 一般 › VPN とデバイス管理 でプロファイルをインストールし、設定 › 一般 › 情報 › 証明書信頼設定 で完全な信頼をオンにします。",
+  "In Settings, search for “CA certificate” (under Security › Encryption & credentials › Install a certificate) and choose the downloaded file. Menu names vary by maker.": "設定で「CA 証明書」を検索し（セキュリティ › 暗号化と認証情報 › 証明書のインストール）、ダウンロードしたファイルを選びます。メニュー名はメーカーによって異なります。",
+  "Firefox keeps its own list: Settings › Privacy & Security › Certificates › View Certificates › Authorities › Import, then tick “Trust this CA to identify websites”.": "Firefox は独自の一覧を使います：設定 › プライバシーとセキュリティ › 証明書 › 証明書を表示 › 認証局証明書 › インポート を開き、「この認証局によるウェブサイトの識別を信頼する」にチェックを入れます。",
+  "Browsers warn because the panel is reached by a local address or name, which public certificate authorities do not cover. This server has its own lab certificate instead: install it once on each computer and phone, and the warning goes away.": "ブラウザーが警告するのは、パネルにローカルのアドレスや名前でアクセスしているためで、公的な認証局はこれらに証明書を発行しません。代わりにこのサーバーには独自のラボ証明書があります。各パソコンとスマートフォンに一度インストールすれば、警告は出なくなります。",
+  "Download the lab certificate": "ラボ証明書をダウンロード",
+  "Restart the browser afterwards. Before trusting the file, check that your system shows this SHA-256 fingerprint. An owner can print it on the server with {cmd}.": "インストール後はブラウザーを再起動してください。信頼する前に、システムに表示される SHA-256 フィンガープリントが下と一致するか確認してください。オーナーはサーバーで {cmd} を実行して表示できます。",
+  "The lab certificate can only vouch for local addresses and names, never for public websites, so installing it does not weaken anything else.": "ラボ証明書が保証できるのはローカルのアドレスと名前だけで、公開ウェブサイトは保証できません。インストールしても他の安全性は損なわれません。",
+  "Panel certificate": "パネル証明書",
+  "Issued by this server's lab certificate and renewed automatically. Valid until {date}.": "このサーバーのラボ証明書で発行され、自動で更新されます。有効期限：{date}。",
+  "Works at": "使えるアドレス",
+  "This server uses its own certificate, issued by {issuer}, valid until {date}. Browsers trust it when they trust that authority.": "このサーバーは独自の証明書を使っています（発行者：{issuer}、有効期限：{date}）。ブラウザーがその認証局を信頼していれば、この証明書も信頼されます。",
+  "Seeing a browser warning?": "ブラウザーに警告が出ますか？",
+  "Browser certificate": "ブラウザー証明書"
 }

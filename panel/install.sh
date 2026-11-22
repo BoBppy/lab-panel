@@ -16,7 +16,7 @@ id labgw >/dev/null 2>&1 || useradd --system --no-create-home --home-dir /nonexi
 install -d -m 755 /opt/lab/panel /opt/lab/panel/static /etc/lab /etc/lab/users /etc/lab/panel /etc/lab/keys
 install -d -m 770 -o root -g labgw /var/lib/lab
 install -d -m 755 /var/lib/lab/lastlogin
-install -m 644 labcore.py panel.py gateway.py engine.py /opt/lab/panel/
+install -m 644 labcore.py labtls.py panel.py gateway.py engine.py /opt/lab/panel/
 install -m 755 storage-setup.sh /opt/lab/panel/storage-setup.sh
 install -m 644 static/* /opt/lab/panel/static/
 install -m 755 lab-ctl /usr/local/sbin/lab-ctl
@@ -74,14 +74,10 @@ chown labgw:labgw /var/lib/lab/lab.db*; chmod 660 /var/lib/lab/lab.db*
 [ -s /etc/lab/strata.key ] || python3 -c 'import secrets; print("sk-" + secrets.token_hex(24))' > /etc/lab/strata.key
 chown root:labgw /etc/lab/strata.key; chmod 640 /etc/lab/strata.key
 
-# self-signed TLS for the panel (put your own certificate at the same paths if you have one)
-if [ ! -f /etc/lab/panel/tls.crt ]; then
-  ip=$(hostname -I | awk '{print $1}')
-  org=$(python3 -I -c 'import json; print(json.load(open("/etc/lab/lab.json")).get("org", "Lab"))')
-  openssl req -x509 -newkey rsa:3072 -sha256 -days 3650 -nodes -keyout /etc/lab/panel/tls.key -out /etc/lab/panel/tls.crt \
-    -subj "/O=$org/CN=$(hostname)" -addext "subjectAltName=DNS:$(hostname),DNS:localhost,IP:$ip,IP:127.0.0.1" 2>/dev/null
-  chmod 600 /etc/lab/panel/tls.key
-fi
+# HTTPS: this server's own lab certificate, and a panel certificate issued from it (see labtls.py). An earlier
+# self-signed certificate is replaced; a certificate you put at /etc/lab/panel/tls.crt yourself is kept.
+org=$(python3 -I -c 'import json; print(json.load(open("/etc/lab/lab.json")).get("org", "Lab"))')
+python3 -I /opt/lab/panel/labtls.py "$org"
 
 # existing members: database row, model key, and a complete per-person file for lab-enter
 python3 -I -c '

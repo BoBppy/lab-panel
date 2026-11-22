@@ -24,7 +24,7 @@ lab-panel is meant for a research group: people who are trusted not to attack ea
 
 ## Panel
 
-- HTTPS only, with a self-signed certificate by default. Session cookies are `HttpOnly`, `Secure` and `SameSite=Strict`. Every change must carry a custom header, which defeats cross-site requests.
+- HTTPS only. Each server makes its own lab certificate (a small certificate authority) and issues the panel's certificate from it, renewing it before it expires or when the server's addresses change. Name constraints limit the lab certificate to private addresses and local names, so installing it on a computer cannot let it vouch for a public website, even if its key leaks. A certificate you put at `/etc/lab/panel/tls.crt` yourself is never replaced. Session cookies are `HttpOnly`, `Secure` and `SameSite=Strict`. Every change must carry a custom header, which defeats cross-site requests.
 - Failed sign-ins slow down exponentially per address.
 - Owner, admin and viewer roles. Only owners manage admins and install system updates. Viewers cannot change anything or see API keys.
 - Optional TOTP two-factor sign-in per admin.

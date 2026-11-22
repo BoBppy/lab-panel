@@ -19,6 +19,7 @@ from urllib.parse import parse_qs, urlsplit
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 import labcore as L  # noqa: E402
+import labtls  # noqa: E402
 import engine as E  # noqa: E402
 
 C = L.conf()
@@ -526,12 +527,20 @@ class Handler(BaseHTTPRequestHandler):
         u = urlsplit(self.path)
         path, qs = u.path, parse_qs(u.query)
         try:
-            if method == "GET" and not path.startswith("/api/"):
+            if method == "GET" and not path.startswith("/api/") and path != "/lab-ca.crt":
                 return self.static(path)
             if path == "/api/login" and method == "POST":
                 return self.login()
             if path == "/api/brand" and method == "GET":      # shown on the sign-in page
-                return self.send(200, L.brand())
+                t = labtls.status()
+                return self.send(200, dict(L.brand(), lab_ca=t["mode"] == "lab", ca_sha256=t["ca_sha256"]))
+            if path == "/lab-ca.crt" and method == "GET":     # public by nature; people compare its fingerprint
+                pem = labtls.ca_pem()
+                if not pem:
+                    return self.send(404, b"no lab certificate", "text/plain")
+                name = re.sub(r"[^A-Za-z0-9-]", "", os.uname().nodename) or "lab"
+                return self.send(200, pem, "application/x-x509-ca-cert",
+                                 extra={"Content-Disposition": f'attachment; filename="{name}-lab-certificate.crt"'})
             if path == "/api/brand/logo" and method == "GET":
                 return self.logo()
             admin = self.session()
@@ -713,6 +722,8 @@ class Handler(BaseHTTPRequestHandler):
                 raise L.LabError("you cannot delete your own account")
             L.delete_admin(L.valid_name(parts[1]), admin)
             return self.send(200, {"ok": True})
+        if parts == ["system", "tls"] and method == "GET":
+            return self.send(200, labtls.status())
         if parts == ["system", "brand"] and method == "PUT":
             b = self.body_json()
             logo = b.get("logo")
@@ -816,14 +827,35 @@ class Server(ThreadingHTTPServer):
             except OSError:
                 pass
 
+    def handle_error(self, request, client_address):
+        # a client that hangs up mid-request (browser cancelling, port scanners) is not worth a traceback
+        if isinstance(sys.exc_info()[1], (ssl.SSLError, ConnectionError, TimeoutError)):
+            return
+        super().handle_error(request, client_address)
+
 
 if __name__ == "__main__":
     L.init_db()
     STATS = Stats()
     ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
     ctx.minimum_version = ssl.TLSVersion.TLSv1_2
+    try:
+        labtls.ensure(C["org"])
+    except Exception as e:                  # never keep the panel from starting; the old certificate still works
+        print("certificate:", e, flush=True)
     ctx.load_cert_chain(os.path.join(TLS_DIR, "tls.crt"), os.path.join(TLS_DIR, "tls.key"))
     Server.ctx = ctx
+
+    def renew():                            # daily: renew before expiry or when the addresses change, no restart
+        while True:
+            time.sleep(86400)
+            try:
+                if labtls.ensure(L.conf()["org"]):
+                    ctx.load_cert_chain(os.path.join(TLS_DIR, "tls.crt"), os.path.join(TLS_DIR, "tls.key"))
+                    print("certificate renewed", flush=True)
+            except Exception as e:
+                print("certificate renewal:", e, flush=True)
+    threading.Thread(target=renew, daemon=True).start()
     srv = Server((C["panel_listen"], int(C["panel_port"])), Handler)
     print(f"panel on https://{C['panel_listen']}:{C['panel_port']}", flush=True)
     srv.serve_forever()

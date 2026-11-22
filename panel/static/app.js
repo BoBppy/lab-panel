@@ -315,7 +315,7 @@ $("#userFilter").addEventListener("input", renderUsers);
 $("#usersTable").addEventListener("click", (e) => { const r = e.target.closest("tr[data-user]"); if (r) openUser(r.dataset.user); });
 
 function dialog(html, kind = "drawer") { const d = $("#dlg"); d.className = kind; $("#dlgBody").innerHTML = html; if (!d.open) d.showModal(); return d; }
-function closeDlg() { $("#dlg").close(); reload(); }
+function closeDlg() { $("#dlg").close(); if (ME && !$("#app").classList.contains("hidden")) reload(); }
 $("#dlg").addEventListener("click", (e) => { if (e.target.closest("[data-close]") || e.target === $("#dlg")) closeDlg(); });
 const closeX = () => `<button class="x" data-close aria-label="${esc(_("Close"))}">×</button>`;
 
@@ -470,6 +470,7 @@ async function openUser(name, sub = "settings") {
     <div class="dlg-b">${body[sub]}</div>`);
   const D = $("#dlgBody"), reopen = (s = sub) => openUser(name, s), P = "users/" + encodeURIComponent(name);
   $$("[data-sub]", D).forEach((b) => b.addEventListener("click", () => openUser(name, b.dataset.sub)));
+  $(".subtabs .on", D)?.scrollIntoView({ block: "nearest", inline: "nearest" });   // on phones the strip scrolls
   if (sub === "settings") {
     $("#editForm").addEventListener("submit", async (e) => {
       e.preventDefault();
@@ -672,6 +673,7 @@ async function loadSettings() {
   });
   loadBrand();
   loadLook();
+  loadTls().catch(() => {});
   loadDisks(false).catch(() => {});
   if (ME.role === "owner") {
     const admins = await api("GET", "admins"), R = ROLE();
@@ -714,6 +716,38 @@ function loadLook(focus) {
   $("#lookRefresh").addEventListener("change", (e) => savePrefs({ refresh: +e.target.value }));
   if (focus) ({ mode: $('input[name="lookMode"]:checked'), scheme: $('input[name="lookScheme"]:checked'), font: $('input[name="lookFont"]:checked'), lang: $("#lookLang"), refresh: $("#lookRefresh") })[focus]?.focus();
 }
+// ------------------------------------------------------------------ browser certificate: why browsers warn, and how to stop it
+function osGuess() {
+  const u = navigator.userAgent;
+  return /iPhone|iPad|iPod/.test(u) || (/Macintosh/.test(u) && navigator.maxTouchPoints > 1) ? "ios" : /Android/.test(u) ? "android" : /Mac/.test(u) ? "mac" : /Win/.test(u) ? "win" : "linux";
+}
+function trustHTML(sha) {
+  const steps = [
+    ["mac", "macOS", _("Open the downloaded file; Keychain Access adds it. Double-click the certificate there, open Trust, set “When using this certificate” to “Always Trust”, then close the window and confirm with your password.")],
+    ["win", "Windows", _("Open the downloaded file and choose Install Certificate. Pick Current User, then “Place all certificates in the following store”, Browse, “Trusted Root Certification Authorities”, and finish.")],
+    ["linux", "Linux", _("In Chrome or Edge: Settings › Privacy and security › Security › Manage certificates, then import it under Authorities and tick “Trust this certificate for identifying websites”.")],
+    ["ios", "iPhone, iPad", _("Open the download in Safari and allow it. In Settings › General › VPN & Device Management, install the profile, then turn on full trust in Settings › General › About › Certificate Trust Settings.")],
+    ["android", "Android", _("In Settings, search for “CA certificate” (under Security › Encryption & credentials › Install a certificate) and choose the downloaded file. Menu names vary by maker.")],
+    ["firefox", "Firefox", _("Firefox keeps its own list: Settings › Privacy & Security › Certificates › View Certificates › Authorities › Import, then tick “Trust this CA to identify websites”.")],
+  ];
+  const os = osGuess();
+  return `<div class="trust">
+    <p>${_("Browsers warn because the panel is reached by a local address or name, which public certificate authorities do not cover. This server has its own lab certificate instead: install it once on each computer and phone, and the warning goes away.")}</p>
+    <p><a class="btn primary" href="/lab-ca.crt" download>${_("Download the lab certificate")}</a></p>
+    <div class="trust-steps">${steps.map(([k, n, t]) => `<details ${k === os ? "open" : ""}><summary>${n}</summary><p>${t}</p></details>`).join("")}</div>
+    <p class="hint">${_("Restart the browser afterwards. Before trusting the file, check that your system shows this SHA-256 fingerprint. An owner can print it on the server with {cmd}.", { cmd: "<code>sudo python3 /opt/lab/panel/labtls.py</code>" })}</p>
+    <code class="fp">${esc(sha).replace(/:/g, ":<wbr>")}</code>
+    <p class="hint">${_("The lab certificate can only vouch for local addresses and names, never for public websites, so installing it does not weaken anything else.")}</p></div>`;
+}
+async function loadTls() {
+  const t = await api("GET", "system/tls"), date = (d) => d ? new Date(d + "T00:00").toLocaleDateString(LOC, { year: "numeric", month: "long", day: "numeric" }) : "–";
+  $("#tlsBox").innerHTML = t.mode === "lab"
+    ? `<dl class="kv"><dt>${_("Panel certificate")}</dt><dd>${esc(_("Issued by this server's lab certificate and renewed automatically. Valid until {date}.", { date: date(t.expires) }))}</dd>
+        <dt>${_("Works at")}</dt><dd>${t.names.map((n) => `<code>${esc(n)}</code>`).join(" ")}</dd></dl>${trustHTML(t.ca_sha256)}`
+    : `<p class="sub">${esc(_("This server uses its own certificate, issued by {issuer}, valid until {date}. Browsers trust it when they trust that authority.", { issuer: t.issuer, date: date(t.expires) }))}</p>`;
+}
+$("#trustLink").addEventListener("click", () => dialog(`<div class="dlg-h"><div><h2>${_("Seeing a browser warning?")}</h2></div>${closeX()}</div><div class="dlg-b">${trustHTML(BRAND.ca_sha256 || "")}</div>`, "center"));
+let BRAND = {};
 // ------------------------------------------------------------------ settings: lab name and logo
 function loadBrand() {
   const own = ME.role === "owner";
@@ -843,6 +877,6 @@ I18N.ready.then(() => {
   translateStatic(document.body);
   document.title = _("Lab server");
   renderLoginLang();
-  fetch("/api/brand").then((r) => r.json()).then(applyBrand).catch(() => {});
+  fetch("/api/brand").then((r) => r.json()).then((b) => { BRAND = b; applyBrand(b); $("#trustLink").classList.toggle("hidden", !b.lab_ca); }).catch(() => {});
   start();
 });
