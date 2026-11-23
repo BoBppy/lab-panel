@@ -689,5 +689,20 @@
   "the engine page is off; an owner can turn it on here": "エンジンのページは無効です。所有者がここで有効にできます",
   "only owners and admins can open the engine page": "エンジンのページを開けるのは所有者と管理者だけです",
   "that port is used by the engine page": "そのポートはエンジンのページが使っています",
-  "that port is used by the panel": "そのポートはパネルが使っています"
+  "that port is used by the panel": "そのポートはパネルが使っています",
+  "A container or a session on the server": "サーバー上のコンテナーまたはセッション",
+  "This server": "このサーバー",
+  "API and model": "API とモデル",
+  "From": "発信元",
+  "Prompt tokens the engine still had in its cache from an earlier call": "以前の呼び出しからエンジンのキャッシュに残っていたプロンプトのトークン",
+  "Reused": "再利用",
+  "Until the first answer token, including any wait in the engine's queue": "最初の回答トークンまで。エンジンの待ち行列での待ち時間を含みます",
+  "New prompt tokens read per second, up to the first answer token": "最初の回答トークンまでに、1秒あたり読み込んだ新しいプロンプトのトークン数",
+  "Prompt reading": "プロンプト読み込み",
+  "Answer tokens per second after the first one. For calls that were not streamed, the whole call's rate": "最初のトークン以降、1秒あたりの回答トークン数。ストリーミングしなかった呼び出しは呼び出し全体の速さです",
+  "Answer speed": "回答の速さ",
+  "Whole call, prompt reading included": "呼び出し全体（プロンプト読み込みを含む）",
+  "Listens on": "待ち受けアドレス",
+  "every network of this server; the firewall decides who gets in": "このサーバーのすべてのネットワーク。誰が入れるかはファイアウォールが決めます",
+  "this server only; the gateway passes calls on to it, people cannot reach it directly": "このサーバー内のみ。呼び出しはゲートウェイが転送し、利用者は直接アクセスできません"
 }

@@ -329,7 +329,7 @@ def user_detail(name):
         "SELECT date(ts,'unixepoch','localtime') d, COUNT(*) n, COALESCE(SUM(prompt),0) p, COALESCE(SUM(completion),0) c "
         "FROM usage WHERE user=? AND ts>=? GROUP BY d ORDER BY d", (name, time.time() - 30 * 86400))]
     recent = [dict(r) for r in con.execute(
-        "SELECT ts, endpoint, model, prompt, completion, ms, ttft_ms, status, stream, ip FROM usage WHERE user=? "
+        "SELECT ts, endpoint, model, prompt, completion, cached, ms, ttft_ms, status, stream, ip FROM usage WHERE user=? "
         "ORDER BY ts DESC LIMIT 50", (name,))]
     since = time.strftime("%Y-%m-%d", time.localtime(time.time() - 29 * 86400))
     gdays = {r["day"]: r for r in con.execute(
@@ -358,9 +358,11 @@ def llm_payload():
         "COALESCE(SUM(status>=400),0) err, AVG(CASE WHEN completion>0 AND ms>0 THEN completion*1000.0/ms END) tps "
         "FROM usage WHERE ts>=? GROUP BY user ORDER BY p+c DESC", (since,))]
     recent = [dict(r) for r in con.execute(
-        "SELECT ts, user, endpoint, model, prompt, completion, ms, ttft_ms, status, stream FROM usage ORDER BY ts DESC LIMIT 100")]
+        "SELECT ts, user, endpoint, model, prompt, completion, cached, ms, ttft_ms, status, stream, ip FROM usage "
+        "ORDER BY ts DESC LIMIT 100")]
     con.close()
     return {"strata": STATS.strata, "days": fill_days(days), "per_user": per_user, "recent": recent,
+            "engine_port": int(C["strata_port"]),
             "gateway": {"port": C["gateway_port"], "listen": C["gateway_listen"], "model": L.conf()["model"],
                         "active": sh(["systemctl", "is-active", "lab-llm-gateway"]).strip()}}
 

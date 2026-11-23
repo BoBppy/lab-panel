@@ -532,9 +532,39 @@ async function openUser(name, sub = "settings") {
 }
 
 // ------------------------------------------------------------------ language model
+// One call: tokens reused from the engine's cache, how fast the prompt was read (first token, so engine queueing is
+// included) and how fast the answer came (after the first token). Unstreamed calls only have the whole duration.
+const LOCAL_IP = /^(127\.|::1$|::ffff:127\.)/;
+function reqSpeeds(r) {
+  const fresh = Math.max(0, (r.prompt || 0) - (r.cached || 0)), split = r.stream && r.ttft_ms > 0 && r.ms > r.ttft_ms;
+  return {
+    read: split && fresh >= 32 ? fresh / (r.ttft_ms / 1000) : null,
+    answer: split && r.completion > 1 ? (r.completion - 1) / ((r.ms - r.ttft_ms) / 1000) : null,
+    overall: !split && r.completion > 0 && r.ms > 0 ? r.completion / (r.ms / 1000) : null,
+  };
+}
+const tps = (v) => (v >= 100 ? fmtN(Math.round(v)) : v.toFixed(1)) + " tok/s";
 function reqTable(rows, withUser = true) {
   if (!rows.length) return `<p class="empty">${_("No requests yet.")}</p>`;
-  return `<table><thead><tr><th>${_("Time")}</th>${withUser ? `<th>${_("Person")}</th>` : ""}<th>API</th><th class="num">${_("Prompt")}</th><th class="num">${_("Answer")}</th><th class="num">${_("First token")}</th><th class="num">${_("Total")}</th><th>${_("Result")}</th></tr></thead><tbody>${rows.map((r) => `<tr><td>${fmtT(r.ts)}</td>${withUser ? `<td>${esc(r.user)}</td>` : ""}<td>${esc(r.endpoint.replace("/v1/", ""))}${r.stream ? ` <span class="sub">${_("streamed")}</span>` : ""}</td><td class="num">${fmtN(r.prompt)}</td><td class="num">${fmtN(r.completion)}</td><td class="num">${r.ttft_ms != null ? (r.ttft_ms / 1000).toFixed(1) + " s" : "–"}</td><td class="num">${(r.ms / 1000).toFixed(1)} s</td><td>${r.status === 499 ? `<span class="pill warn">${_("Cancelled")}</span>` : r.status >= 400 ? `<span class="pill bad">${_("Error {code}", { code: r.status })}</span>` : '<span class="pill ok">OK</span>'}</td></tr>`).join("")}</tbody></table>`;
+  const from = (ip) => !ip ? "–" : LOCAL_IP.test(ip) ? `<span title="${esc(_("A container or a session on the server"))}">${_("This server")}</span>` : `<code>${esc(ip.replace(/^::ffff:/, ""))}</code>`;
+  const head = `<th>${_("Time")}</th>${withUser ? `<th>${_("Person")}</th>` : ""}<th>${_("API and model")}</th><th>${_("From")}</th>
+    <th class="num">${_("Prompt")}</th><th class="num" title="${esc(_("Prompt tokens the engine still had in its cache from an earlier call"))}">${_("Reused")}</th><th class="num">${_("Answer")}</th>
+    <th class="num" title="${esc(_("Until the first answer token, including any wait in the engine's queue"))}">${_("First token")}</th>
+    <th class="num" title="${esc(_("New prompt tokens read per second, up to the first answer token"))}">${_("Prompt reading")}</th>
+    <th class="num" title="${esc(_("Answer tokens per second after the first one. For calls that were not streamed, the whole call's rate"))}">${_("Answer speed")}</th>
+    <th class="num">${_("Total")}</th><th>${_("Result")}</th>`;
+  return `<table class="reqs"><thead><tr>${head}</tr></thead><tbody>${rows.map((r) => {
+    const sp = reqSpeeds(r), share = r.prompt && r.cached ? Math.round((100 * r.cached) / r.prompt) : 0;
+    return `<tr><td>${fmtT(r.ts)}</td>${withUser ? `<td>${esc(r.user)}</td>` : ""}
+      <td>${esc(r.endpoint.replace("/v1/", ""))}${r.stream ? ` <span class="sub">${_("streamed")}</span>` : ""}${r.model ? `<span class="model" title="${esc(r.model)}">${esc(r.model)}</span>` : ""}</td>
+      <td>${from(r.ip)}</td><td class="num">${fmtN(r.prompt)}</td>
+      <td class="num">${r.cached ? `${fmtN(r.cached)} <span class="sub">${share}%</span>` : "–"}</td><td class="num">${fmtN(r.completion)}</td>
+      <td class="num">${r.stream && r.ttft_ms != null ? (r.ttft_ms / 1000).toFixed(1) + " s" : "–"}</td>
+      <td class="num">${sp.read != null ? tps(sp.read) : "–"}</td>
+      <td class="num">${sp.answer != null ? tps(sp.answer) : sp.overall != null ? `<span class="sub" title="${esc(_("Whole call, prompt reading included"))}">${tps(sp.overall)}</span>` : "–"}</td>
+      <td class="num">${(r.ms / 1000).toFixed(1)} s</td>
+      <td>${r.status === 499 ? `<span class="pill warn">${_("Cancelled")}</span>` : r.status >= 400 ? `<span class="pill bad">${_("Error {code}", { code: r.status })}</span>` : '<span class="pill ok">OK</span>'}</td></tr>`;
+  }).join("")}</tbody></table>`;
 }
 async function loadLLM() {
   const [d, ov] = await Promise.all([api("GET", "llm"), api("GET", "overview")]);
@@ -545,6 +575,8 @@ async function loadLLM() {
   const g = d.gateway, base = `http://${location.hostname}:${g.port}`;
   $("#gwBox").innerHTML = `<dl class="kv"><dt>${_("Gateway")}</dt><dd>${g.active === "active" ? `<span class="pill ok">${_("Running")}</span>` : `<span class="pill bad">${esc(g.active)}</span>`}</dd>
     <dt>${_("OpenAI style")}</dt><dd><code>${esc(base)}/v1</code></dd><dt>${_("Anthropic style")}</dt><dd><code>${esc(base)}</code></dd>
+    <dt>${_("Listens on")}</dt><dd><code>${esc(g.listen === "0.0.0.0" ? "*" : g.listen)}:${esc(g.port)}</code> ${g.listen === "0.0.0.0" ? `<span class="sub">${_("every network of this server; the firewall decides who gets in")}</span>` : ""}</dd>
+    <dt>${_("Engine")}</dt><dd><code>127.0.0.1:${esc(d.engine_port)}</code> <span class="sub">${_("this server only; the gateway passes calls on to it, people cannot reach it directly")}</span></dd>
     <dt>${_("Model name")}</dt><dd><code>${esc(g.model)}</code></dd>
     <dt>${_("Keys")}</dt><dd>${_("One per person, under People, Sign-in and keys. Daily limits and requests at once are set per person.")}</dd>
     <dt>${_("In containers")}</dt><dd>${_("Already set up: {vars}, and the person's key.", { vars: "<code>$OPENAI_BASE_URL</code>, <code>$ANTHROPIC_BASE_URL</code>" })}</dd></dl>`;

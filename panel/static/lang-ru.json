@@ -689,5 +689,20 @@
   "the engine page is off; an owner can turn it on here": "страница движка выключена; владелец может включить её здесь",
   "only owners and admins can open the engine page": "открыть страницу движка могут только владельцы и администраторы",
   "that port is used by the engine page": "этот порт занят страницей движка",
-  "that port is used by the panel": "этот порт занят панелью"
+  "that port is used by the panel": "этот порт занят панелью",
+  "A container or a session on the server": "Контейнер или сеанс на сервере",
+  "This server": "Этот сервер",
+  "API and model": "API и модель",
+  "From": "Откуда",
+  "Prompt tokens the engine still had in its cache from an earlier call": "Токены запроса, которые ещё оставались в кэше движка после прошлого вызова",
+  "Reused": "Из кэша",
+  "Until the first answer token, including any wait in the engine's queue": "До первого токена ответа, включая ожидание в очереди движка",
+  "New prompt tokens read per second, up to the first answer token": "Новых токенов запроса в секунду, до первого токена ответа",
+  "Prompt reading": "Чтение запроса",
+  "Answer tokens per second after the first one. For calls that were not streamed, the whole call's rate": "Токенов ответа в секунду после первого. Для вызовов без потоковой передачи — скорость всего вызова",
+  "Answer speed": "Скорость ответа",
+  "Whole call, prompt reading included": "Весь вызов, включая чтение запроса",
+  "Listens on": "Слушает",
+  "every network of this server; the firewall decides who gets in": "все сети этого сервера; кого пускать, решает брандмауэр",
+  "this server only; the gateway passes calls on to it, people cannot reach it directly": "только этот сервер; вызовы передаёт шлюз, напрямую к нему не подключиться"
 }

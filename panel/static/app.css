@@ -199,6 +199,8 @@ fieldset { border: 0; border-top: 1px solid var(--rule); margin: 6px 0 0; paddin
 /* ---------- tables */
 .table-wrap { overflow: auto; }
 .table-wrap.tall { max-height: 480px; }
+.reqs th, .reqs td { padding-left: 10px; padding-right: 10px; }
+.reqs th[title] { text-decoration: underline dotted; text-underline-offset: 3px; cursor: help; }
 table { width: 100%; border-collapse: collapse; }
 th, td { text-align: left; padding: 10px 14px; border-bottom: 1px solid var(--rule-soft); white-space: nowrap; vertical-align: middle; }
 th { font-size: 12.5px; font-weight: 600; color: var(--muted); background: var(--sheet); position: sticky; top: 0; border-bottom-color: var(--rule); }

@@ -689,5 +689,20 @@
   "the engine page is off; an owner can turn it on here": "引擎网页已关闭；所有者可以在这里开启",
   "only owners and admins can open the engine page": "只有所有者和管理员可以打开引擎网页",
   "that port is used by the engine page": "该端口已被引擎网页使用",
-  "that port is used by the panel": "该端口已被面板使用"
+  "that port is used by the panel": "该端口已被面板使用",
+  "A container or a session on the server": "服务器上的某个容器或会话",
+  "This server": "本服务器",
+  "API and model": "API 与模型",
+  "From": "来源",
+  "Prompt tokens the engine still had in its cache from an earlier call": "引擎缓存中保留自先前调用、可直接复用的提示词 token",
+  "Reused": "复用",
+  "Until the first answer token, including any wait in the engine's queue": "到第一个回答 token 为止，包括在引擎队列中的等待",
+  "New prompt tokens read per second, up to the first answer token": "每秒读入的新提示词 token 数，计到第一个回答 token 为止",
+  "Prompt reading": "读提示词",
+  "Answer tokens per second after the first one. For calls that were not streamed, the whole call's rate": "第一个之后每秒生成的回答 token 数。非流式调用显示整个调用的速度",
+  "Answer speed": "回答速度",
+  "Whole call, prompt reading included": "整个调用，含读提示词的时间",
+  "Listens on": "监听地址",
+  "every network of this server; the firewall decides who gets in": "本服务器的所有网络；由防火墙决定谁能连入",
+  "this server only; the gateway passes calls on to it, people cannot reach it directly": "仅限本服务器；由网关转发调用，其他人无法直接访问"
 }
