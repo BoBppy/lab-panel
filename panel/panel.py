@@ -3,6 +3,7 @@
 Python stdlib only; runs as root (it manages accounts and Docker)."""
 import base64
 import collections
+import html
 import http.client
 import json
 import os
@@ -787,6 +788,12 @@ class Handler(BaseHTTPRequestHandler):
             if not trial_end("cancelled", admin):
                 raise L.LabError("no port change is waiting; it may have been undone already")
             return self.send(200, {"ok": True})
+        if parts == ["engine", "page"] and method == "GET":
+            return self.send(200, ep_view())
+        if parts == ["engine", "page", "open"] and method == "POST":
+            return self.send(200, ep_ticket(admin))
+        if parts == ["system", "engine-page"] and method == "POST":
+            return self.send(200, ep_set(self.body_json().get("port"), admin))
         if method == "GET" and parts == ["engine"]:
             return self.send(200, engine_payload(qs.get("refresh") == ["1"]))
         if method == "POST" and parts == ["engine", "apply"]:
@@ -893,7 +900,7 @@ def trial_view():
     t = TRIAL and {"kind": TRIAL["kind"], "port": TRIAL["state"]["new"], "old": TRIAL["state"]["old"],
                    "seconds_left": max(0, int(TRIAL["deadline"] - time.time())), "by": TRIAL["by"]}
     return {"port": int(C["panel_port"]), "firewall": L.firewall(), "trial": t or None, "last": LAST_TRIAL or None,
-            "trial_seconds": TRIAL_SECONDS, "reserved": [int(C["gateway_port"]), int(C["strata_port"])]}
+            "trial_seconds": TRIAL_SECONDS, "reserved": [int(C["gateway_port"]), int(C["strata_port"])] + ([int(C["engine_page_port"])] if C.get("engine_page_port") else [])}
 
 
 def fw_undo(port, rules):
@@ -920,6 +927,8 @@ def port_try(new, admin):
             raise L.LabError("the panel already uses that port")
         if new in (int(C["gateway_port"]), int(C["strata_port"])):
             raise L.LabError("that port belongs to the language model gateway or engine")
+        if new == int(C.get("engine_page_port") or 0):
+            raise L.LabError("that port is used by the engine page")
         try:
             srv = Server((C["panel_listen"], new), Handler)
         except OSError:
@@ -1011,6 +1020,250 @@ def trial_recover():
     trial_clear()
 
 
+# ---------------------------------------------------------------- the engine's own web page, on a port of its own
+# Strata (and some other engines) serve a page of their own: chat, a monitor and the engine's settings. It is passed
+# through on a separate port, so it is a separate origin: scripts on it cannot use the panel's session or API. The
+# panel hands an owner or admin a one-time ticket; this listener trades it for a session of its own and adds the
+# engine's private key to every request, so the key never reaches the browser. Viewers and lab members get nothing.
+EP_COMMENT = "lab engine page"
+EP_TICKET_S = 60
+EP_SESSION_S = 8 * 3600
+EP_TICKETS = {}       # ticket -> (admin, expires)
+EP_SESS = {}          # session -> (admin, expires)
+EP = {"server": None}
+EP_LOCK = threading.Lock()
+EP_HOP = {"connection", "keep-alive", "proxy-authenticate", "proxy-authorization", "te", "trailer", "trailers",
+          "transfer-encoding", "upgrade", "host", "cookie", "authorization", "origin", "referer", "content-length"}
+EP_DROP = EP_HOP | {"server", "date", "set-cookie", "x-frame-options", "referrer-policy"}   # ours replace these
+EP_MAX_BODY = 64 << 20        # chat requests can carry pictures
+
+
+def ep_admin(name):
+    """The admin, if they may still use the engine page (owners and admins; not viewers)."""
+    a = L.get_admin(name) if name else None
+    return a if a and a["role"] in ("owner", "admin") else None
+
+
+class EngineHandler(BaseHTTPRequestHandler):
+    protocol_version = "HTTP/1.1"
+    server_version = "LabPanel/1.0"
+    timeout = 120
+
+    def log_message(self, fmt, *args):
+        pass
+
+    def plain(self, status, text, extra=None):
+        body = (f"<!doctype html><meta charset=utf-8><title>Engine page</title><body style='font:16px/1.5 sans-serif;"
+                f"max-width:40em;margin:3em auto;padding:0 1em'><p>{text}</p>").encode()
+        self.send_response(status)
+        for k, v in {"Content-Type": "text/html; charset=utf-8", "Content-Length": str(len(body)), "Cache-Control": "no-store",
+                     "X-Frame-Options": "DENY", "Referrer-Policy": "no-referrer", "X-Content-Type-Options": "nosniff",
+                     "Content-Security-Policy": "default-src 'none'; style-src 'unsafe-inline'", **(extra or {})}.items():
+            self.send_header(k, v)
+        self.end_headers()
+        if self.command != "HEAD":
+            self.wfile.write(body)
+
+    def panel_link(self):
+        host = re.sub(r":\d+$", "", self.headers.get("Host") or "")
+        if not re.match(r"^(\[[0-9a-fA-F:.]+\]|[A-Za-z0-9.-]+)$", host):
+            host = "this-server"
+        port = int(C["panel_port"])
+        return html.escape(f"https://{host}{'' if port == 443 else ':' + str(port)}/", quote=True)
+
+    def do_GET(self):
+        self.handle_any()
+
+    def do_HEAD(self):
+        self.handle_any()
+
+    def do_POST(self):
+        self.handle_any()
+
+    def do_PUT(self):
+        self.handle_any()
+
+    def do_PATCH(self):
+        self.handle_any()
+
+    def do_DELETE(self):
+        self.handle_any()
+
+    def handle_any(self):
+        self.started = False                        # set once the engine's answer has begun to go out
+        try:
+            u = urlsplit(self.path)
+            if not self.path.startswith("/"):
+                return self.plain(400, "Bad request.")
+            if u.path == "/lab-enter":
+                return self.enter(parse_qs(u.query).get("t", [""])[0])
+            m = re.search(r"(?:^|;\s*)rleng=([A-Za-z0-9_-]+)", self.headers.get("Cookie", ""))
+            with EP_LOCK:
+                s = EP_SESS.get(m.group(1)) if m else None
+                if s and s[1] < time.time():
+                    EP_SESS.pop(m.group(1), None)
+                    s = None
+            if not s or not ep_admin(s[0]):
+                link = self.panel_link()
+                return self.plain(401, f"Open this page from the lab panel: <a href='{link}'>{link}</a>, Language model, "
+                                       "Engine's own page. Only owners and admins can use it.")
+            # requests that change something must come from this page itself, not from another site on this host
+            if self.command not in ("GET", "HEAD") and self.headers.get("Origin") != f"https://{self.headers.get('Host')}":
+                return self.plain(403, "This request did not come from the engine page.")
+            with EP_LOCK:
+                EP_SESS[m.group(1)] = (s[0], time.time() + EP_SESSION_S)
+            return self.proxy()
+        except (ConnectionError, TimeoutError, ssl.SSLError):
+            self.close_connection = True
+        except Exception as e:
+            print("engine page:", self.command, self.path[:200], repr(e), flush=True)
+            try:
+                if not self.started:
+                    self.plain(502, "The engine did not answer. It may be loading or stopped; see Language model in the panel.")
+            except OSError:
+                pass
+            self.close_connection = True
+
+    def enter(self, ticket):
+        with EP_LOCK:
+            t = EP_TICKETS.pop(ticket, None) if ticket else None
+        if not t or t[1] < time.time() or not ep_admin(t[0]):
+            return self.plain(403, f"That link has expired or was already used. Open the engine page again from the "
+                                   f"panel: <a href='{self.panel_link()}'>{self.panel_link()}</a>")
+        tok = secrets.token_urlsafe(32)
+        with EP_LOCK:
+            now = time.time()
+            for k in [k for k, v in EP_SESS.items() if v[1] < now]:
+                EP_SESS.pop(k, None)
+            EP_SESS[tok] = (t[0], now + EP_SESSION_S)
+        L.audit(t[0], "engine-page", "engine", self.client_address[0])
+        self.send_response(303)
+        for k, v in {"Location": "/", "Content-Length": "0", "Cache-Control": "no-store", "Referrer-Policy": "no-referrer",
+                     "Set-Cookie": f"rleng={tok}; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age={EP_SESSION_S}"}.items():
+            self.send_header(k, v)
+        self.end_headers()
+
+    def proxy(self):
+        if self.headers.get("Transfer-Encoding"):
+            return self.plain(411, "Send a Content-Length.")
+        n = int(self.headers.get("Content-Length") or 0)
+        if n > EP_MAX_BODY:
+            return self.plain(413, "That request is too large.")
+        body = self.rfile.read(n) if n else None
+        hdrs = {k: v for k, v in self.headers.items() if k.lower() not in EP_HOP}
+        hdrs["Authorization"] = "Bearer " + open(E.KEY_FILE).read().strip()
+        con = http.client.HTTPConnection("127.0.0.1", int(C["strata_port"]), timeout=900)   # long prompts take a while
+        try:
+            try:
+                con.request(self.command, self.path, body=body, headers=hdrs)
+                r = con.getresponse()
+            except OSError:
+                return self.plain(502, "The engine did not answer. It may be loading or stopped; see Language model in the panel.")
+            self.started = True
+            self.send_response(r.status, r.reason)
+            length = r.getheader("Content-Length")
+            for k, v in r.getheaders():
+                if k.lower() not in EP_DROP:
+                    self.send_header(k, v)
+            self.send_header("X-Frame-Options", "DENY")
+            self.send_header("Referrer-Policy", "no-referrer")
+            if length is not None:
+                self.send_header("Content-Length", length)
+            else:                                   # streamed answers: pass them on as they come, then close
+                self.send_header("Connection", "close")
+                self.close_connection = True
+            self.end_headers()
+            if self.command == "HEAD":
+                return
+            while True:
+                chunk = r.read1(65536)
+                if not chunk:
+                    break
+                self.wfile.write(chunk)
+                self.wfile.flush()
+        finally:
+            con.close()
+
+
+def ep_view():
+    port = int(C.get("engine_page_port") or 0)
+    return {"port": port, "on": bool(EP["server"]), "firewall": L.firewall(), "panel_port": int(C["panel_port"])}
+
+
+def ep_listen(port):
+    srv = Server((C["panel_listen"], int(port)), EngineHandler)
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    return srv
+
+
+def ep_fw_cleanup(keep=0):
+    """Remove the firewall rules this panel added for the engine page, except those for port `keep`."""
+    if L.firewall() != "ufw":
+        return
+    for r in L.ufw_port_rules():
+        if r["comment"] == EP_COMMENT and r["port"] != keep:
+            fw_undo(r["port"], [r])
+
+
+def ep_set(port, admin):
+    """Turn the engine page on at `port`, move it there, or turn it off (port 0)."""
+    try:
+        port = int(port or 0)
+    except (TypeError, ValueError):
+        raise L.LabError("the port must be a number from 1 to 65535")
+    with EP_LOCK:
+        old = int(C.get("engine_page_port") or 0)
+        if port == old and (port == 0 or EP["server"]):
+            return ep_view()
+        if port:
+            if not 1 <= port <= 65535:
+                raise L.LabError("the port must be a number from 1 to 65535")
+            if port == int(C["panel_port"]) or (TRIAL and port == TRIAL["state"]["new"]):
+                raise L.LabError("that port is used by the panel")
+            if port in (int(C["gateway_port"]), int(C["strata_port"])):
+                raise L.LabError("that port belongs to the language model gateway or engine")
+            try:
+                srv = Server((C["panel_listen"], port), EngineHandler)
+            except OSError:
+                raise L.LabError(f"port {port} is already in use on this server")
+            if L.firewall() == "ufw":       # open it to the same networks as the panel
+                try:
+                    have = {L.ufw_rule_key(r) for r in L.ufw_port_rules(port)}
+                    for r in L.ufw_port_rules(int(C["panel_port"])):
+                        if L.ufw_rule_key(r) not in have:
+                            L.ufw_allow(port, r, EP_COMMENT)
+                except Exception:
+                    srv.server_close()
+                    ep_fw_cleanup(keep=old)
+                    raise
+            threading.Thread(target=srv.serve_forever, daemon=True).start()
+        old_srv, EP["server"] = EP["server"], (srv if port else None)
+        L.update_conf(engine_page_port=port)
+        C["engine_page_port"] = port
+        if not port:
+            EP_SESS.clear()
+            EP_TICKETS.clear()
+        ep_fw_cleanup(keep=port)
+    if old_srv:
+        stop(old_srv)
+    L.audit(admin, "engine-page-port", str(port or "off"), {"from": old or "off"})
+    return ep_view()
+
+
+def ep_ticket(admin):
+    if not EP["server"]:
+        raise L.LabError("the engine page is off; an owner can turn it on here")
+    if not ep_admin(admin):
+        raise L.LabError("only owners and admins can open the engine page")
+    t = secrets.token_urlsafe(24)
+    with EP_LOCK:
+        now = time.time()
+        for k in [k for k, v in EP_TICKETS.items() if v[1] < now]:
+            EP_TICKETS.pop(k, None)
+        EP_TICKETS[t] = (admin, now + EP_TICKET_S)
+    return {"port": int(C["engine_page_port"]), "ticket": t}
+
+
 if __name__ == "__main__":
     L.init_db()
     STATS = Stats()
@@ -1035,5 +1288,15 @@ if __name__ == "__main__":
     threading.Thread(target=renew, daemon=True).start()
     trial_recover()
     LISTENERS[int(C["panel_port"])] = serve(C["panel_port"])
+    if int(C.get("engine_page_port") or 0):
+        try:
+            EP["server"] = ep_listen(C["engine_page_port"])
+            print(f"engine page on https://{C['panel_listen']}:{C['engine_page_port']}", flush=True)
+        except OSError as e:
+            print("engine page:", e, flush=True)
+    try:
+        ep_fw_cleanup(keep=int(C.get("engine_page_port") or 0))
+    except Exception as e:
+        print("firewall:", e, flush=True)
     print(f"panel on https://{C['panel_listen']}:{C['panel_port']}", flush=True)
     threading.Event().wait()                # listeners run in their own threads, so one can close while another runs

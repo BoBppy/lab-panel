@@ -87,10 +87,8 @@ for net in $LAN; do
     ufw allow from "$net" to any port "$port" proto tcp comment 'lab, local network' >/dev/null
   done
 done
-# Members (uid >= 1000, inside containers or SSH tunnels) reach the engine only through the metered gateway.
-if ! grep -q 'lab: engine only via gateway' /etc/ufw/before.rules; then
-  sed -i "s|^# allow all on loopback|# lab: engine only via gateway\n-A ufw-before-output -o lo -p tcp --dport $ENGINE -m owner --uid-owner 1000-65533 -j REJECT --reject-with tcp-reset\n\n# allow all on loopback|" /etc/ufw/before.rules
-fi
+# People (uid >= 1000: host accounts, SSH tunnels, their containers) reach the engine only through the gateway.
+"$(dirname "$0")/engine-guard.sh"
 ufw --force enable >/dev/null
 systemctl stop lab-ufw-failsafe.timer 2>/dev/null || true
 ufw status | sed -n '1,3p'

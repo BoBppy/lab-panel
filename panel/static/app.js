@@ -548,6 +548,7 @@ async function loadLLM() {
     <dt>${_("Model name")}</dt><dd><code>${esc(g.model)}</code></dd>
     <dt>${_("Keys")}</dt><dd>${_("One per person, under People, Sign-in and keys. Daily limits and requests at once are set per person.")}</dd>
     <dt>${_("In containers")}</dt><dd>${_("Already set up: {vars}, and the person's key.", { vars: "<code>$OPENAI_BASE_URL</code>, <code>$ANTHROPIC_BASE_URL</code>" })}</dd></dl>`;
+  loadEngPage().catch(() => {});
   if (!ENG_RENDERED) await loadEngine();
   else updateJobs(await api("GET", "jobs"));
   $("#llmChart").innerHTML = bars(d.days, ["p", "c"], ["var(--p3)", "var(--p1)"], [_("prompt"), _("answer")]);
@@ -561,6 +562,33 @@ $$("[data-strata]").forEach((b) => b.addEventListener("click", async () => {
   await act(() => api("POST", "strata", { action: a }), done).catch(() => {});
   b.disabled = false; reload();
 }));
+
+// ------------------------------------------------------------------ the engine's own page, passed through on a port of its own
+async function loadEngPage() {
+  const p = await api("GET", "engine/page"), own = ME.role === "owner", box = $("#engPageBox");
+  if (box.querySelector("input:focus")) return;            // a refresh must not wipe a port being typed
+  const url = p.port ? `https://${location.hostname}${p.port === 443 ? "" : ":" + p.port}/` : "";
+  const fw = p.port && p.firewall === "other" ? `<p class="hint">${_("This server's firewall is not managed by the panel: open port {port} in it for the networks that reach the panel.", { port: p.port })}</p>` : "";
+  box.innerHTML = `<p class="sub" style="margin:0 0 12px">${_("The engine's built-in web page, if it has one (Strata's has a chat, a live monitor and the engine's own settings). It opens on a port of its own, so it cannot reach this panel. The panel signs you in to it and adds the engine's private key, which never reaches your browser. Only owners and admins can open it.")}</p>
+    <p class="hint" style="margin:0 0 12px">${_("Settings changed there apply to everyone who uses the model, and its chats do not count toward anyone's daily limit.")}</p>
+    <dl class="kv"><dt>${_("Address")}</dt><dd>${p.on ? `<code>${esc(url)}</code>` : p.port ? `<span class="pill bad">${_("Port {port} could not be opened", { port: p.port })}</span>` : _("Off")}</dd></dl>${fw}
+    ${p.on && ME.role !== "viewer" ? `<div class="actions"><button class="btn primary" id="engPageOpen">${_("Open the engine's page")}</button></div>` : ""}
+    ${own ? `<form id="engPageForm" class="part port-form"><label>${p.port ? _("Port") : _("Turn on at port")}<span class="inline"><input name="port" type="number" min="1" max="65535" required inputmode="numeric" value="${p.port || ""}" placeholder="${p.panel_port + 1}">
+        <button class="btn" type="submit">${p.port ? _("Move it") : _("Turn on")}</button>${p.port ? `<button class="btn quiet-danger" type="button" id="engPageOff">${_("Turn off")}</button>` : ""}</span></label>
+        <p class="hint">${p.firewall === "ufw" ? _("The port is opened to the same networks as the panel, and closed again when you turn it off.") : _("Any port that is free on this server.")}</p></form>` : ""}`;
+  $("#engPageOpen")?.addEventListener("click", async () => {
+    const w = window.open("about:blank", "_blank");           // opened now, while the click still counts, then sent on
+    try {
+      const t = await api("POST", "engine/page/open", {});
+      if (!w) return toast(_("Your browser blocked the new tab. Allow pop-ups for this panel and try again."), true);
+      w.opener = null;
+      w.location = `https://${location.hostname}${t.port === 443 ? "" : ":" + t.port}/lab-enter?t=${encodeURIComponent(t.ticket)}`;
+    } catch (e) { w?.close(); toast(e.message, true); }
+  });
+  const set = async (port, msg) => { await act(() => api("POST", "system/engine-page", { port }), msg).catch(() => {}); loadEngPage().catch(() => {}); };
+  $("#engPageForm")?.addEventListener("submit", (e) => { e.preventDefault(); const port = +new FormData(e.target).get("port"); set(port, _("The engine's page is at port {port}.", { port })); });
+  $("#engPageOff")?.addEventListener("click", () => confirm(_("Turn off the engine's page? Anyone using it is signed out of it.")) && set(0, _("The engine's page is off.")));
+}
 
 // ------------------------------------------------------------------ engine settings
 const opt = (vals, cur, labels = {}) => vals.map((v) => `<option value="${esc(v)}" ${String(v) === String(cur) ? "selected" : ""}>${esc(labels[v] ?? v)}</option>`).join("");
@@ -647,7 +675,8 @@ const ACTIONS = () => ({ "user-add": _("Added person"), "user-edit": _("Changed 
   quota: _("Changed disk limits"), "home-move": _("Moved home folder"), login: _("Signed in"), "login-failed": _("Failed sign-in"), "engine-apply": _("Applied engine settings"),
   "engine-apply-failed": _("Engine settings failed"), "engine-pull": _("Downloaded engine version"), "admin-password": _("Set admin password"), "admin-save": _("Changed panel admin"), "admin-delete": _("Removed panel admin"),
   "two-factor-on": _("Turned on two-factor sign-in"), "two-factor-off": _("Turned off two-factor sign-in"), storage: _("Changed disk settings"), brand: _("Changed the lab name or logo"), "disk-limits": _("Turned on disk limits"), "system-upgrade": _("Installed server updates"), reboot: _("Restarted the server"),
-  "panel-restart": _("Restarted the panel"), "panel-port-try": _("Tried a new panel port"), "panel-port": _("Changed the panel port"), "panel-port-undo": _("Undid a panel port change") });
+  "panel-restart": _("Restarted the panel"), "panel-port-try": _("Tried a new panel port"), "panel-port": _("Changed the panel port"), "panel-port-undo": _("Undid a panel port change"),
+  "engine-page": _("Opened the engine's page"), "engine-page-port": _("Changed the engine page port") });
 async function loadAudit() {
   const rows = await api("GET", "audit"), A = ACTIONS();
   $("#auditTable").innerHTML = `<thead><tr><th>${_("Time")}</th><th>${_("By")}</th><th>${_("What")}</th><th>${_("Who or what")}</th><th>${_("Details")}</th></tr></thead><tbody>${rows.map((r) => `<tr><td>${fmtT(r.ts)}</td><td>${esc(r.actor)}</td><td>${esc(A[r.action] || r.action.replace(/-/g, " "))}</td><td>${esc(r.target)}</td><td class="sub" style="white-space:normal;max-width:520px;overflow-wrap:anywhere">${esc(r.detail)}</td></tr>`).join("") || `<tr><td colspan="5" class="empty">${_("Nothing yet.")}</td></tr>`}</tbody>`;

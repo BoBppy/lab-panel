@@ -11,7 +11,7 @@ lab-panel is meant for a research group: people who are trusted not to attack ea
 | Processes | Each container has its own PID namespace. `ps` shows only that person's processes. |
 | Memory, CPU, processes | cgroup limits per container. An out-of-memory kill stays inside the container, and the engine is protected with `--oom-score-adj -900`. |
 | Disk space | ext4 user quotas, enforced by the kernel on every write. |
-| Model use | Personal API key, daily token quota and concurrency cap, enforced by the gateway. The raw engine port is reachable only from root and the gateway (`scripts/harden.sh` adds the firewall rule). |
+| Model use | Personal API key, daily token quota and concurrency cap, enforced by the gateway. The engine is reachable only from root and the gateway: `scripts/engine-guard.sh` (run by `harden.sh`) rejects connections from every uid from 1000 up, which covers host accounts, SSH tunnels and people's containers, to the engine's port on loopback and to Docker's bridge, where the engine container listens. Connections Docker translates from a published port are let through, so services other containers publish stay reachable. |
 | Raw sockets | `NET_RAW` is dropped: no packet capture or forged packets. |
 
 ## What they share
@@ -20,7 +20,7 @@ lab-panel is meant for a research group: people who are trusted not to attack ea
 - **GPU.** One GPU is shared with no memory partitioning, unless your card supports MIG. One person can fill its memory.
 - **The kernel.** A user namespace removes host root from the picture, but every container still talks to the same kernel. Keep the host updated.
 - **With `RUNTIME=docker`:** Docker cannot give each container its own user namespace, so root inside is the host's uid 0, limited only by namespaces, dropped capabilities and seccomp. Prefer Podman. Under Docker, turn admin rights off for anyone who does not need `apt install`: the container then sets `no-new-privileges`.
-- **SSH tunnels.** `ssh -L` runs on the host as the person's own uid. Tunnels are allowed because Jupyter and TensorBoard need them.
+- **SSH tunnels.** `ssh -L` runs on the host as the person's own uid. Tunnels are allowed because Jupyter and TensorBoard need them; the engine guard applies to them like to everything else a person runs.
 
 ## Panel
 
@@ -31,6 +31,7 @@ lab-panel is meant for a research group: people who are trusted not to attack ea
 - Every change is written to the activity log with who, what and when.
 - A change that could cut everyone off from the panel (so far, its port) is tried next to the old setting and kept only if an owner reaches the panel the new way within two minutes; otherwise it is undone by itself. `lab.json` changes only once it is kept. What the trial adds to the firewall is recorded before it is added, so if the panel stops mid-trial it starts again on the old port and removes those rules.
 - Restarting the panel from Settings signs everyone out; containers and the language model keep running.
+- The engine's own web page (Language model, Engine's own page; off until an owner picks a port) is served on a port of its own, so it is a separate origin and its scripts cannot use the panel's session. Owners and admins open it with a one-time ticket from the panel; the panel adds the engine's key to each request, so the key never reaches the browser. Changes must come from the page itself (checked by `Origin`). Settings changed there apply to everyone, chats there skip the daily limits, and with Strata its tool (MCP) servers run inside the engine container.
 - The lab logo is the only file anyone can upload. It must be a PNG, JPEG, WebP or SVG of at most 512 KB; SVGs with scripts, event handlers or embedded documents are refused. It is shown only through `<img>` and served with a sandboxing Content-Security-Policy, so even a crafted SVG opened directly cannot run.
 
 ## Baseline for the host (`scripts/harden.sh`)

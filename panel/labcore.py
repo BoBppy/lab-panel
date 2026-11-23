@@ -38,6 +38,7 @@ DEFAULTS = {
     "panel_listen": "0.0.0.0", "panel_port": 39743,
     "gateway_listen": "0.0.0.0", "gateway_port": 39700,
     "strata_port": 39701,
+    "engine_page_port": 0,            # the engine's own web page, passed through by the panel on this port; 0 = off
     "model": "local",                 # model name people pass to the gateway; set by the engine page
     "default_daily_tokens": 0,        # 0 = unlimited
     "default_concurrency": 2,
@@ -487,9 +488,9 @@ def firewall():
     return ""
 
 
-def ufw_port_rules(port):
-    """Plain 'allow' rules for one TCP port, read from ufw's own rule files (rules naming an app profile, a port
-    range or a source port are left out, so they are neither copied nor removed)."""
+def ufw_port_rules(port=None):
+    """Plain 'allow' rules for one TCP port (or every port), read from ufw's own rule files (rules naming an app
+    profile, a port range or a source port are left out, so they are neither copied nor removed)."""
     out = []
     for path, v6 in UFW_RULES:
         try:
@@ -503,11 +504,17 @@ def ufw_port_rules(port):
             if len(t) < 7 or len(t) > 8 or (len(t) == 8 and not t[7].startswith("comment=")):
                 continue
             action, proto, dport, dst, sport, src, direction = t[:7]
-            if action != "allow" or proto not in ("tcp", "any") or dport != str(port) or sport != "any":
+            if action != "allow" or proto not in ("tcp", "any") or not dport.isdigit() or sport != "any":
+                continue
+            if port is not None and dport != str(port):
                 continue
             if direction != "in" and not direction.startswith("in_"):
                 continue
-            out.append({"v6": v6, "proto": proto, "dst": dst, "src": src,
+            try:                                    # ufw keeps comments hex-encoded
+                comment = bytes.fromhex(t[7][len("comment="):]).decode() if len(t) == 8 else ""
+            except ValueError:
+                comment = t[7][len("comment="):]
+            out.append({"v6": v6, "proto": proto, "dst": dst, "src": src, "port": int(dport), "comment": comment,
                         "iface": direction[3:] if direction.startswith("in_") else ""})
     return out
 

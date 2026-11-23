@@ -79,6 +79,7 @@ sudo LAB_ORG="Physics Lab" panel/install.sh      # panel, gateway, ssh wiring, f
 sudo panel/storage-setup.sh                       # lxcfs, plus disk limits on the disk that holds /home
 sudo lab-ctl build                                # build the container image (20-40 minutes)
 sudo scripts/harden.sh                            # optional, recommended: firewall, fail2ban, sshd, update policy
+sudo scripts/engine-guard.sh                      # only the engine guard (harden.sh includes it); again after changing strata_port
 sudo scripts/gpu-profiling.sh on                  # optional: GPU performance counters for everyone (after a reboot)
 ```
 
@@ -95,6 +96,7 @@ Everything host-specific lives in `/etc/lab/lab.json`. Missing keys take the def
 | `org` | Lab name shown in the panel and in the TLS certificate; owners can change it under Settings, Lab name and logo |
 | `subtitle` | Line under the name in the sidebar; empty shows `<host name> server` |
 | `panel_port` | Port of the panel (default 39743). Owners can change it under Settings, Panel port and restart: the panel answers on both ports while you open it at the new one, and keeps the new port only if that works within two minutes. With ufw the new port is opened to the same networks as the old one, and the old port's rules are removed once the new one is kept |
+| `engine_page_port` | Port of the engine's own web page, such as Strata's chat and monitor; 0 (the default) keeps it off. Owners turn it on under Language model, Engine's own page; with ufw the port is opened to the same networks as the panel. Only owners and admins can open it, and the panel adds the engine's key for them |
 | `tls_names` | Extra local names the panel is reached by (for example `gpu.lab.internal`). Read when the lab certificate is first made; to add one later, delete `/etc/lab/panel/ca.*` and `tls.*`, restart the panel, and have everyone install the new lab certificate |
 | `storage` | Disks people can use; normally edited in the panel. `path` (mount point; limits apply here), `homes` (where home folders may live), `data` (parent of per-person data folders), optional `label` to replace the automatic name |
 | `default_quota_gb` | Limits for new people, per disk path |
