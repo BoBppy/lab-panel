@@ -94,6 +94,7 @@ Everything host-specific lives in `/etc/lab/lab.json`. Missing keys take the def
 |---|---|
 | `org` | Lab name shown in the panel and in the TLS certificate; owners can change it under Settings, Lab name and logo |
 | `subtitle` | Line under the name in the sidebar; empty shows `<host name> server` |
+| `panel_port` | Port of the panel (default 39743). Owners can change it under Settings, Panel port and restart: the panel answers on both ports while you open it at the new one, and keeps the new port only if that works within two minutes. With ufw the new port is opened to the same networks as the old one, and the old port's rules are removed once the new one is kept |
 | `tls_names` | Extra local names the panel is reached by (for example `gpu.lab.internal`). Read when the lab certificate is first made; to add one later, delete `/etc/lab/panel/ca.*` and `tls.*`, restart the panel, and have everyone install the new lab certificate |
 | `storage` | Disks people can use; normally edited in the panel. `path` (mount point; limits apply here), `homes` (where home folders may live), `data` (parent of per-person data folders), optional `label` to replace the automatic name |
 | `default_quota_gb` | Limits for new people, per disk path |

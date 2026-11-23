@@ -409,6 +409,8 @@ dialog.center { width: min(720px, 94vw); border-radius: 10px; border: 1px solid 
 /* browser certificate */
 .trust { display: grid; gap: 12px; max-width: 72ch; }
 .kv + .trust { margin-top: 18px; padding-top: 18px; border-top: 1px solid var(--rule-soft); }
+.kv + .port-form { margin-top: 18px; padding-top: 18px; border-top: 1px solid var(--rule-soft); }
+.port-form .inline input { flex: 0 1 9em; }
 .trust p { margin: 0; }
 .trust-steps { display: grid; gap: 6px; }
 .trust-steps details { border: 1px solid var(--rule); border-radius: 6px; background: var(--sheet); }

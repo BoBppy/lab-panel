@@ -124,6 +124,7 @@ async function start() {
   ME.storage.forEach((d) => (FSN[d.path] = d.label));
   api("GET", "system/updates").then((u) => ($("#updCount").textContent = u.upgradable.length || "")).catch(() => {});
   $$(".hostip").forEach((x) => (x.textContent = location.hostname));
+  keepPort();
   show(TAB);
 }
 // ------------------------------------------------------------------ refreshing: on a timer the person chooses, or by hand
@@ -645,7 +646,8 @@ const ACTIONS = () => ({ "user-add": _("Added person"), "user-edit": _("Changed 
   password: _("Set password"), "ssh-key-add": _("Added SSH key"), "ssh-key-remove": _("Removed SSH key"), "llm-key-regenerate": _("Replaced model key"), "llm-key-view": _("Viewed model key"),
   quota: _("Changed disk limits"), "home-move": _("Moved home folder"), login: _("Signed in"), "login-failed": _("Failed sign-in"), "engine-apply": _("Applied engine settings"),
   "engine-apply-failed": _("Engine settings failed"), "engine-pull": _("Downloaded engine version"), "admin-password": _("Set admin password"), "admin-save": _("Changed panel admin"), "admin-delete": _("Removed panel admin"),
-  "two-factor-on": _("Turned on two-factor sign-in"), "two-factor-off": _("Turned off two-factor sign-in"), storage: _("Changed disk settings"), brand: _("Changed the lab name or logo"), "disk-limits": _("Turned on disk limits"), "system-upgrade": _("Installed server updates"), reboot: _("Restarted the server") });
+  "two-factor-on": _("Turned on two-factor sign-in"), "two-factor-off": _("Turned off two-factor sign-in"), storage: _("Changed disk settings"), brand: _("Changed the lab name or logo"), "disk-limits": _("Turned on disk limits"), "system-upgrade": _("Installed server updates"), reboot: _("Restarted the server"),
+  "panel-restart": _("Restarted the panel"), "panel-port-try": _("Tried a new panel port"), "panel-port": _("Changed the panel port"), "panel-port-undo": _("Undid a panel port change") });
 async function loadAudit() {
   const rows = await api("GET", "audit"), A = ACTIONS();
   $("#auditTable").innerHTML = `<thead><tr><th>${_("Time")}</th><th>${_("By")}</th><th>${_("What")}</th><th>${_("Who or what")}</th><th>${_("Details")}</th></tr></thead><tbody>${rows.map((r) => `<tr><td>${fmtT(r.ts)}</td><td>${esc(r.actor)}</td><td>${esc(A[r.action] || r.action.replace(/-/g, " "))}</td><td>${esc(r.target)}</td><td class="sub" style="white-space:normal;max-width:520px;overflow-wrap:anywhere">${esc(r.detail)}</td></tr>`).join("") || `<tr><td colspan="5" class="empty">${_("Nothing yet.")}</td></tr>`}</tbody>`;
@@ -674,6 +676,7 @@ async function loadSettings() {
   loadBrand();
   loadLook();
   loadTls().catch(() => {});
+  loadPanel().catch(() => {});
   loadDisks(false).catch(() => {});
   if (ME.role === "owner") {
     const admins = await api("GET", "admins"), R = ROLE();
@@ -748,6 +751,77 @@ async function loadTls() {
 }
 $("#trustLink").addEventListener("click", () => dialog(`<div class="dlg-h"><div><h2>${_("Seeing a browser warning?")}</h2></div>${closeX()}</div><div class="dlg-b">${trustHTML(BRAND.ca_sha256 || "")}</div>`, "center"));
 let BRAND = {};
+// ------------------------------------------------------------------ panel port (tried, then kept or undone) and restart
+const panelURL = (port) => `${location.protocol}//${location.hostname}${+port === 443 ? "" : ":" + port}/`;
+async function loadPanel() {
+  const p = await api("GET", "system/panel"), own = ME.role === "owner";
+  const fw = { ufw: _("ufw. Trying a port opens it to the same networks as the current one; keeping it closes the old one."),
+    other: _("A firewall the panel does not manage. Open the new port in it first, or the new address cannot be reached and the change is undone."),
+    "": _("None found.") }[p.firewall];
+  $("#panelBox").innerHTML = `<dl class="kv"><dt>${_("Address")}</dt><dd><code>${esc(panelURL(p.port))}</code></dd><dt>${_("Firewall")}</dt><dd>${esc(fw)}</dd></dl>
+    ${own ? `<form id="portForm" class="part port-form"><label>${_("New port")}<span class="inline"><input name="port" type="number" min="1" max="65535" required inputmode="numeric">
+        <button class="btn" type="submit">${_("Try this port")}</button></span></label>
+      <p class="hint">${_("The current address keeps working while you try. The new port is kept only if you open the panel there within {n} seconds; otherwise everything stays as it is.", { n: p.trial_seconds })}</p></form>
+      <div class="actions"><button class="btn quiet-danger" id="panelRestart">${_("Restart the panel")}</button></div>`
+    : `<p class="sub">${_("Only an owner can change the port or restart the panel.")}</p>`}`;
+  if (!own) return;
+  if (p.trial) trialDialog(p.trial);
+  $("#portForm").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const r = await act(() => api("POST", "system/panel/port", { port: +new FormData(e.target).get("port") })).catch(() => null);
+    if (r) trialDialog(r.trial);
+  });
+  $("#panelRestart").addEventListener("click", async () => {
+    if (!confirm(_("Restart the panel? Everyone signed in to it, you included, signs in again. Containers and the language model keep running."))) return;
+    if (!(await act(() => api("POST", "system/panel/restart", {}), _("The panel is restarting…")).catch(() => null))) return;
+    const t0 = Date.now();
+    const wait = setInterval(async () => {          // the old process answers for a moment, so start looking after 3 s
+      if (Date.now() - t0 < 3000) return;
+      if (Date.now() - t0 > 90000) { clearInterval(wait); return toast(_("The panel has not come back yet. Reload this page in a minute."), true); }
+      try { if ((await fetch("/api/brand", { cache: "no-store" })).ok) { clearInterval(wait); location.reload(); } } catch (err) { /* still down */ }
+    }, 1500);
+  });
+}
+// The page that started the trial stays on the old address and counts down; the new tab keeps the port on arrival.
+function trialDialog(t) {
+  const url = panelURL(t.port) + "?keep-port=" + t.port;
+  dialog(`<div class="dlg-h"><div><h2>${_("Try port {port}", { port: t.port })}</h2></div>${closeX()}</div>
+    <div class="dlg-b"><p>${_("The panel now also answers at the new address. Open it there to keep the new port; this address then stops working.")}</p>
+      <p><a class="btn primary" href="${esc(url)}" target="_blank" rel="noopener">${_("Open the panel at port {port}", { port: t.port })}</a></p>
+      <p class="hint" id="trialLeft" aria-live="polite"></p></div>
+    <div class="dlg-f"><button class="btn" id="trialCancel">${_("Cancel the change")}</button></div>`, "center");
+  const left = $("#trialLeft"), end = Date.now() + t.seconds_left * 1000;
+  let over = false;
+  const done = (msg, bad) => { if (over) return; over = true; clearInterval(poll); left.textContent = msg; $("#trialCancel")?.remove(); toast(msg, bad); };
+  const tick = () => (left.textContent = _("If the new address does not open, the change is undone in {n} s and the panel stays at port {old}.", { n: Math.max(0, Math.round((end - Date.now()) / 1000)), old: t.old }));
+  tick();
+  let busy = false;
+  const poll = setInterval(async () => {
+    if (!$("#dlg").open) return clearInterval(poll);
+    tick();
+    if (busy || over) return;
+    busy = true;
+    try {
+      const p = await api("GET", "system/panel");
+      if (!p.trial && p.last?.result === "kept") done(_("Port {port} is kept. Continue in the new tab.", { port: p.last.port }));
+      else if (!p.trial && p.last?.result === "timeout") done(_("Port {port} was not opened in time, so nothing changed.", { port: t.port }), true);
+      else if (!p.trial) done(_("The port change was cancelled."));
+    } catch (e) {        // this address closes once the new port is kept
+      done(_("This address has stopped answering, as it does once the new port is kept. Continue at {url}", { url: panelURL(t.port) }));
+    } finally { busy = false; }
+  }, 2000);
+  $("#trialCancel").addEventListener("click", async () => {
+    if (await act(() => api("POST", "system/panel/port/cancel", {})).catch(() => null)) done(_("The port change was cancelled."));
+  });
+}
+// arriving at the new address from that link: keep the port (an owner must be signed in; the cookie carries over)
+async function keepPort() {
+  const want = new URLSearchParams(location.search).get("keep-port");
+  if (!want) return;
+  history.replaceState(null, "", location.pathname + location.hash);
+  if (+want !== +(location.port || 443)) return;
+  await act(() => api("POST", "system/panel/port/keep", {}), _("The panel now uses port {port}. The old address no longer works.", { port: want })).catch(() => {});
+}
 // ------------------------------------------------------------------ settings: lab name and logo
 function loadBrand() {
   const own = ME.role === "owner";

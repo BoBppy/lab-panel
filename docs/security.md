@@ -29,6 +29,8 @@ lab-panel is meant for a research group: people who are trusted not to attack ea
 - Owner, admin and viewer roles. Only owners manage admins and install system updates. Viewers cannot change anything or see API keys.
 - Optional TOTP two-factor sign-in per admin.
 - Every change is written to the activity log with who, what and when.
+- A change that could cut everyone off from the panel (so far, its port) is tried next to the old setting and kept only if an owner reaches the panel the new way within two minutes; otherwise it is undone by itself. `lab.json` changes only once it is kept. What the trial adds to the firewall is recorded before it is added, so if the panel stops mid-trial it starts again on the old port and removes those rules.
+- Restarting the panel from Settings signs everyone out; containers and the language model keep running.
 - The lab logo is the only file anyone can upload. It must be a PNG, JPEG, WebP or SVG of at most 512 KB; SVGs with scripts, event handlers or embedded documents are refused. It is shown only through `<img>` and served with a sandboxing Content-Security-Policy, so even a crafted SVG opened directly cannot run.
 
 ## Baseline for the host (`scripts/harden.sh`)

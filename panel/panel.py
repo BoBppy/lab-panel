@@ -770,6 +770,23 @@ class Handler(BaseHTTPRequestHandler):
             L.audit(admin, "reboot", os.uname().nodename)
             subprocess.Popen(["systemd-run", "--on-active=5", "systemctl", "reboot"])
             return self.send(200, {"ok": True})
+        if parts == ["system", "panel"] and method == "GET":
+            return self.send(200, trial_view())
+        if parts == ["system", "panel", "restart"] and method == "POST":
+            if TRIAL:
+                raise L.LabError("a port change is being tried; keep or cancel it first")
+            L.audit(admin, "panel-restart", os.uname().nodename)
+            # from a transient unit, so the restart is not part of the service it stops; the reply leaves first
+            subprocess.Popen(["systemd-run", "--on-active=2", "systemctl", "restart", "lab-panel"])
+            return self.send(200, {"ok": True})
+        if parts == ["system", "panel", "port"] and method == "POST":
+            return self.send(200, port_try(self.body_json().get("port"), admin))
+        if parts == ["system", "panel", "port", "keep"] and method == "POST":
+            return self.send(200, port_keep(self.server, admin))
+        if parts == ["system", "panel", "port", "cancel"] and method == "POST":
+            if not trial_end("cancelled", admin):
+                raise L.LabError("no port change is waiting; it may have been undone already")
+            return self.send(200, {"ok": True})
         if method == "GET" and parts == ["engine"]:
             return self.send(200, engine_payload(qs.get("refresh") == ["1"]))
         if method == "POST" and parts == ["engine", "apply"]:
@@ -834,6 +851,166 @@ class Server(ThreadingHTTPServer):
         super().handle_error(request, client_address)
 
 
+def serve(port):
+    srv = Server((C["panel_listen"], int(port)), Handler)
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    return srv
+
+
+def stop(srv):
+    threading.Thread(target=lambda: (srv.shutdown(), srv.server_close()), daemon=True).start()
+
+
+# ---------------------------------------------------------------- confirm-or-revert for changes that can lock everyone out
+# A change that decides whether the panel can be reached at all (so far: its port) is tried next to the old setting.
+# It is kept only when an owner reaches the panel the new way before the deadline; otherwise it is undone by itself.
+# lab.json changes only when the change is kept, and what was added for the trial is written to TRIAL_FILE first,
+# so a panel that stops half-way comes back with the old setting and removes the leftovers when it starts again.
+TRIAL_FILE = "/var/lib/lab/panel-trial.json"
+TRIAL_SECONDS = 120
+LISTENERS = {}        # port -> Server
+TRIAL = {}            # the change being tried: kind, state, deadline, by, server, timer
+LAST_TRIAL = {}       # how the last one ended, for the page that started it
+TRIAL_LOCK = threading.Lock()
+FW_COMMENT = "lab panel"
+
+
+def trial_save():
+    tmp = TRIAL_FILE + ".tmp"
+    with open(os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600), "w") as f:
+        json.dump({k: TRIAL[k] for k in ("kind", "state", "deadline", "by")}, f)
+    os.replace(tmp, TRIAL_FILE)
+
+
+def trial_clear():
+    try:
+        os.remove(TRIAL_FILE)
+    except FileNotFoundError:
+        pass
+
+
+def trial_view():
+    t = TRIAL and {"kind": TRIAL["kind"], "port": TRIAL["state"]["new"], "old": TRIAL["state"]["old"],
+                   "seconds_left": max(0, int(TRIAL["deadline"] - time.time())), "by": TRIAL["by"]}
+    return {"port": int(C["panel_port"]), "firewall": L.firewall(), "trial": t or None, "last": LAST_TRIAL or None,
+            "trial_seconds": TRIAL_SECONDS, "reserved": [int(C["gateway_port"]), int(C["strata_port"])]}
+
+
+def fw_undo(port, rules):
+    """Remove firewall rules this panel added; one that is already gone is not an error."""
+    for r in rules:
+        try:
+            L.ufw_delete(port, r)
+        except Exception as e:
+            print("firewall:", e, flush=True)
+
+
+def port_try(new, admin):
+    try:
+        new = int(new)
+    except (TypeError, ValueError):
+        raise L.LabError("the port must be a number from 1 to 65535")
+    with TRIAL_LOCK:
+        if TRIAL:
+            raise L.LabError("another change is being tried; wait until it is kept or undone")
+        old = int(C["panel_port"])
+        if not 1 <= new <= 65535:
+            raise L.LabError("the port must be a number from 1 to 65535")
+        if new == old:
+            raise L.LabError("the panel already uses that port")
+        if new in (int(C["gateway_port"]), int(C["strata_port"])):
+            raise L.LabError("that port belongs to the language model gateway or engine")
+        try:
+            srv = Server((C["panel_listen"], new), Handler)
+        except OSError:
+            raise L.LabError(f"port {new} is already in use on this server")
+        fw, added = L.firewall(), []
+        TRIAL.update(kind="port", state={"old": old, "new": new, "fw": fw, "added": added},
+                     deadline=time.time() + TRIAL_SECONDS, by=admin)
+        try:
+            if fw == "ufw":
+                have = {L.ufw_rule_key(r) for r in L.ufw_port_rules(new)}
+                for r in L.ufw_port_rules(old):
+                    if L.ufw_rule_key(r) in have:
+                        continue
+                    added.append(r)
+                    trial_save()            # noted before it exists, so a crash cannot leave it behind unnoticed
+                    L.ufw_allow(new, r, FW_COMMENT)
+            trial_save()
+        except Exception:
+            fw_undo(new, added)
+            srv.server_close()
+            TRIAL.clear()
+            trial_clear()
+            raise
+        threading.Thread(target=srv.serve_forever, daemon=True).start()
+        TRIAL["server"] = srv
+        TRIAL["timer"] = threading.Timer(TRIAL_SECONDS, trial_end, kwargs={"why": "timeout"})
+        TRIAL["timer"].daemon = True
+        TRIAL["timer"].start()
+        LAST_TRIAL.clear()
+    L.audit(admin, "panel-port-try", str(new), {"from": old, "firewall": fw or "none", "seconds": TRIAL_SECONDS})
+    return trial_view()
+
+
+def port_keep(server, admin):
+    with TRIAL_LOCK:
+        if not TRIAL:
+            raise L.LabError("no port change is waiting; it may have been undone already")
+        if server is not TRIAL["server"]:
+            raise L.LabError("open the panel at the new port to keep it")
+        TRIAL["timer"].cancel()
+        st = TRIAL["state"]
+        L.update_conf(panel_port=st["new"])
+        C["panel_port"] = st["new"]
+        old_srv = LISTENERS.pop(st["old"], None)
+        LISTENERS[st["new"]] = TRIAL["server"]
+        if st["fw"] == "ufw":
+            fw_undo(st["old"], L.ufw_port_rules(st["old"]))
+        TRIAL.clear()
+        trial_clear()
+        LAST_TRIAL.update(port=st["new"], old=st["old"], result="kept", at=time.time())
+    if old_srv:
+        stop(old_srv)
+    L.audit(admin, "panel-port", str(st["new"]), {"from": st["old"]})
+    return {"ok": True, "port": st["new"]}
+
+
+def trial_end(why, admin="panel"):
+    """Undo the change being tried (timer ran out, or an owner cancelled it)."""
+    with TRIAL_LOCK:
+        if not TRIAL:
+            return False
+        TRIAL["timer"].cancel()
+        st, srv = TRIAL["state"], TRIAL["server"]
+        fw_undo(st["new"], st["added"])
+        TRIAL.clear()
+        trial_clear()
+        LAST_TRIAL.update(port=st["new"], old=st["old"], result=why, at=time.time())
+    stop(srv)
+    L.audit(admin, "panel-port-undo", str(st["new"]), "not reached in time" if why == "timeout" else "cancelled")
+    return True
+
+
+def trial_recover():
+    """At start-up: finish or undo a change that was being tried when the panel stopped."""
+    try:
+        t = json.load(open(TRIAL_FILE))
+    except FileNotFoundError:
+        return
+    except ValueError:
+        return trial_clear()
+    st, ufw = t.get("state") or {}, (t.get("state") or {}).get("fw") == "ufw"
+    if t.get("kind") == "port" and int(C["panel_port"]) == st.get("new"):    # it was kept; old rules may be left
+        if ufw:
+            fw_undo(st["old"], L.ufw_port_rules(st["old"]))
+    elif t.get("kind") == "port":
+        if ufw:
+            fw_undo(st.get("new"), st.get("added") or [])
+        L.audit("panel", "panel-port-undo", str(st.get("new", "")), "the panel restarted during the trial")
+    trial_clear()
+
+
 if __name__ == "__main__":
     L.init_db()
     STATS = Stats()
@@ -856,6 +1033,7 @@ if __name__ == "__main__":
             except Exception as e:
                 print("certificate renewal:", e, flush=True)
     threading.Thread(target=renew, daemon=True).start()
-    srv = Server((C["panel_listen"], int(C["panel_port"])), Handler)
+    trial_recover()
+    LISTENERS[int(C["panel_port"])] = serve(C["panel_port"])
     print(f"panel on https://{C['panel_listen']}:{C['panel_port']}", flush=True)
-    srv.serve_forever()
+    threading.Event().wait()                # listeners run in their own threads, so one can close while another runs

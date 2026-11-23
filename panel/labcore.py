@@ -469,6 +469,67 @@ def run(cmd, input=None, check=True, timeout=120):
     return p
 
 
+# ---------------------------------------------------------------- firewall: ufw is managed; anything else is reported
+UFW_RULES = (("/etc/ufw/user.rules", False), ("/etc/ufw/user6.rules", True))
+
+
+def firewall():
+    """'ufw' when ufw is filtering, 'other' when another firewall manager is running, '' when none is known."""
+    def ok(cmd, want):
+        try:
+            return want in subprocess.run(cmd, text=True, capture_output=True, timeout=20).stdout
+        except (OSError, subprocess.TimeoutExpired):
+            return False
+    if ok(["ufw", "status"], "Status: active"):
+        return "ufw"
+    if ok(["firewall-cmd", "--state"], "running"):
+        return "other"
+    return ""
+
+
+def ufw_port_rules(port):
+    """Plain 'allow' rules for one TCP port, read from ufw's own rule files (rules naming an app profile, a port
+    range or a source port are left out, so they are neither copied nor removed)."""
+    out = []
+    for path, v6 in UFW_RULES:
+        try:
+            lines = open(path).read().splitlines()
+        except FileNotFoundError:
+            continue
+        for line in lines:
+            if not line.startswith("### tuple ### "):
+                continue
+            t = line[len("### tuple ### "):].split()
+            if len(t) < 7 or len(t) > 8 or (len(t) == 8 and not t[7].startswith("comment=")):
+                continue
+            action, proto, dport, dst, sport, src, direction = t[:7]
+            if action != "allow" or proto not in ("tcp", "any") or dport != str(port) or sport != "any":
+                continue
+            if direction != "in" and not direction.startswith("in_"):
+                continue
+            out.append({"v6": v6, "proto": proto, "dst": dst, "src": src,
+                        "iface": direction[3:] if direction.startswith("in_") else ""})
+    return out
+
+
+def _ufw_spec(port, r, proto):
+    return (["in", "on", r["iface"]] if r["iface"] else ["in"]) + (["proto", proto] if proto != "any" else []) + \
+        ["from", r["src"], "to", r["dst"], "port", str(port)]
+
+
+def ufw_rule_key(r):
+    return (r["v6"], r["dst"], r["src"], r["iface"])
+
+
+def ufw_allow(port, r, comment):
+    """The same rule as r (same sources, destination and interface), for TCP on another port."""
+    run(["ufw", "allow", *_ufw_spec(port, r, "tcp"), "comment", comment], timeout=60)
+
+
+def ufw_delete(port, r):
+    run(["ufw", "--force", "delete", "allow", *_ufw_spec(port, r, r["proto"])], timeout=60)
+
+
 def valid_name(name):
     if not isinstance(name, str) or not NAME_RE.match(name):
         raise LabError(f"invalid user name {name!r} (lowercase letters, digits, _ and -, max 32, not starting with a digit)")
