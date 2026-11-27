@@ -409,19 +409,19 @@ dialog.center { width: min(720px, 94vw); border-radius: 10px; border: 1px solid 
 @media (max-width: 720px) { .faces { grid-template-columns: 1fr; } }
 
 /* browser certificate */
-.trust { display: grid; gap: 12px; max-width: 72ch; }
+.trust { display: grid; grid-template-columns: minmax(0, 1fr); gap: 12px; max-width: 72ch; }
 .kv + .trust { margin-top: 18px; padding-top: 18px; border-top: 1px solid var(--rule-soft); }
 .kv + .port-form { margin-top: 18px; padding-top: 18px; border-top: 1px solid var(--rule-soft); }
 .port-form .inline input { flex: 0 1 9em; }
 .trust p { margin: 0; }
-.trust-steps { display: grid; gap: 6px; }
-.trust-steps details { border: 1px solid var(--rule); border-radius: 6px; background: var(--sheet); }
+.trust-steps { display: grid; grid-template-columns: minmax(0, 1fr); gap: 6px; }
+.trust-steps details { min-width: 0; border: 1px solid var(--rule); border-radius: 6px; background: var(--sheet); }
 .trust-steps summary { cursor: pointer; padding: 8px 12px; font-weight: 600; }
 .trust-steps details p { padding: 0 12px 10px; color: var(--soil); }
 .trust a.btn { justify-self: start; text-decoration: none; }
 .trust h3 { margin: 0; }
-.cmdbox { position: relative; margin: 0 12px 10px; }
-.cmdbox pre.cmd { font-family: var(--mono); font-size: 12px; line-height: 1.5; white-space: pre; overflow: auto; max-height: 260px; background: var(--lichen); border: 1px solid var(--rule); border-radius: 6px; padding: 10px 12px; padding-right: 64px; margin: 0; }
+.cmdbox { position: relative; min-width: 0; margin: 0 12px 10px; }
+.cmdbox pre.cmd { font-family: var(--mono); font-size: 12px; line-height: 1.5; white-space: pre; overflow: auto; max-height: 400px; background: var(--lichen); border: 1px solid var(--rule); border-radius: 6px; padding: 10px 12px; padding-right: 64px; margin: 0; }
 .cmdbox .btn { position: absolute; top: 6px; right: 6px; }
 .trust code.fp { display: block; padding: 8px 10px; font-size: 12px; line-height: 1.6; overflow-wrap: anywhere; }
 .link-quiet { border: 0; background: none; padding: 4px 0 0; font: inherit; font-size: 12.5px; color: var(--muted); text-decoration: underline; text-underline-offset: 3px; cursor: pointer; justify-self: center; }
