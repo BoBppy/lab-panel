@@ -704,5 +704,19 @@
   "Whole call, prompt reading included": "呼び出し全体（プロンプト読み込みを含む）",
   "Listens on": "待ち受けアドレス",
   "every network of this server; the firewall decides who gets in": "このサーバーのすべてのネットワーク。誰が入れるかはファイアウォールが決めます",
-  "this server only; the gateway passes calls on to it, people cannot reach it directly": "このサーバー内のみ。呼び出しはゲートウェイが転送し、利用者は直接アクセスできません"
+  "this server only; the gateway passes calls on to it, people cannot reach it directly": "このサーバー内のみ。呼び出しはゲートウェイが転送し、利用者は直接アクセスできません",
+  "They use plain HTTP to 127.0.0.1, which never leaves this server.": "コンテナ内は 127.0.0.1 への HTTP で、通信はこのサーバーの外に出ません。",
+  "Setting up a computer for HTTPS": "コンピューターを HTTPS 用に設定",
+  "Same certificate as the panel. Set up each computer once, below.": "パネルと同じ証明書です。各コンピューターで一度だけ、下の手順で設定してください。",
+  "Paste into Terminal.": "ターミナルに貼り付けて実行します。",
+  "Paste into a terminal (bash or zsh). No administrator rights needed.": "ターミナル（bash または zsh）に貼り付けて実行します。管理者権限は不要です。",
+  "Paste into PowerShell and confirm the security prompt that asks to install the certificate. Python is set up if it is installed; run the command again after installing it later.": "PowerShell に貼り付けて実行し、証明書のインストールを確認するセキュリティ警告で許可してください。Python はインストール済みなら同時に設定されます。後から Python を入れた場合はもう一度実行してください。",
+  "HTTPS from other computers": "他のコンピューターから HTTPS で接続",
+  "This server's certificate comes from an authority computers already trust, so programs need no setup.": "このサーバーの証明書はコンピューターが既に信頼している認証局が発行したものなので、プログラム側の設定は不要です。",
+  "Programs that call {url} must trust this server's lab certificate. Browsers use the computer's certificate list, but curl, Python and Node.js mostly keep their own. Run this once on each computer:": "{url} を呼び出すプログラムは、このサーバーのラボ証明書を信頼する必要があります。ブラウザーはコンピューターの証明書リストを使いますが、curl、Python、Node.js の多くは独自のリストを使います。各コンピューターで一度実行してください：",
+  "Then check it from a new terminal, with a key from People:": "新しいターミナルで、メンバーページのキーを使って確認します：",
+  "The command downloads the lab certificate and keeps it only if its SHA-256 fingerprint matches the one this panel shows. It then sets {vars} for your account, so the OpenAI and Anthropic SDKs, requests, httpx, curl and Node.js tools such as Claude Code accept the address with no extra options. Public websites keep working: the bundle holds the system's usual list as well.": "このコマンドはラボ証明書をダウンロードし、SHA-256 フィンガープリントがこのパネルの表示と一致した場合だけ保存します。続いてアカウントに {vars} を設定するので、OpenAI・Anthropic SDK、requests、httpx、curl、Claude Code などの Node.js ツールが追加オプションなしでこのアドレスを使えます。公開サイトへの接続はそのままです。バンドルにはシステムの通常のリストも含まれます。",
+  "In code you can also name the file directly: in Python {py}, or {curl} for a single curl call.": "コードの中でファイルを直接指定することもできます。Python では {py}、curl を一度だけ使うなら {curl}。",
+  "Copied.": "コピーしました。",
+  "The browser blocked copying; the command is selected, copy it with the keyboard.": "ブラウザーがコピーをブロックしました。コマンドを選択したので、キーボードでコピーしてください。"
 }

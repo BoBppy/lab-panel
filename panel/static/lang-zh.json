@@ -704,5 +704,19 @@
   "Whole call, prompt reading included": "整个调用，含读提示词的时间",
   "Listens on": "监听地址",
   "every network of this server; the firewall decides who gets in": "本服务器的所有网络；由防火墙决定谁能连入",
-  "this server only; the gateway passes calls on to it, people cannot reach it directly": "仅限本服务器；由网关转发调用，其他人无法直接访问"
+  "this server only; the gateway passes calls on to it, people cannot reach it directly": "仅限本服务器；由网关转发调用，其他人无法直接访问",
+  "They use plain HTTP to 127.0.0.1, which never leaves this server.": "容器内通过 HTTP 访问 127.0.0.1，流量不会离开本服务器。",
+  "Setting up a computer for HTTPS": "为电脑设置 HTTPS 访问",
+  "Same certificate as the panel. Set up each computer once, below.": "与面板使用同一张证书。每台电脑只需按下方设置一次。",
+  "Paste into Terminal.": "粘贴到“终端”中运行。",
+  "Paste into a terminal (bash or zsh). No administrator rights needed.": "粘贴到终端（bash 或 zsh）中运行，无需管理员权限。",
+  "Paste into PowerShell and confirm the security prompt that asks to install the certificate. Python is set up if it is installed; run the command again after installing it later.": "粘贴到 PowerShell 中运行，并在询问是否安装证书的安全提示中确认。已安装的 Python 会一并设置；之后再安装 Python 时请重新运行此命令。",
+  "HTTPS from other computers": "从其他电脑通过 HTTPS 访问",
+  "This server's certificate comes from an authority computers already trust, so programs need no setup.": "本服务器的证书来自电脑已信任的颁发机构，程序无需任何设置。",
+  "Programs that call {url} must trust this server's lab certificate. Browsers use the computer's certificate list, but curl, Python and Node.js mostly keep their own. Run this once on each computer:": "调用 {url} 的程序需要信任本服务器的实验室证书。浏览器使用电脑的证书列表，但 curl、Python 和 Node.js 大多使用自己的列表。请在每台电脑上运行一次：",
+  "Then check it from a new terminal, with a key from People:": "然后在新的终端窗口中用“成员”页面里的密钥检查：",
+  "The command downloads the lab certificate and keeps it only if its SHA-256 fingerprint matches the one this panel shows. It then sets {vars} for your account, so the OpenAI and Anthropic SDKs, requests, httpx, curl and Node.js tools such as Claude Code accept the address with no extra options. Public websites keep working: the bundle holds the system's usual list as well.": "该命令会下载实验室证书，仅当其 SHA-256 指纹与本面板显示的一致时才保存，然后为你的账户设置 {vars}，这样 OpenAI 和 Anthropic SDK、requests、httpx、curl 以及 Claude Code 等 Node.js 工具无需额外选项即可访问该地址。公共网站不受影响：证书包同时包含系统原有的列表。",
+  "In code you can also name the file directly: in Python {py}, or {curl} for a single curl call.": "也可以在代码中直接指定证书文件：Python 中用 {py}，单次 curl 调用用 {curl}。",
+  "Copied.": "已复制。",
+  "The browser blocked copying; the command is selected, copy it with the keyboard.": "浏览器阻止了复制；命令已选中，请用键盘复制。"
 }

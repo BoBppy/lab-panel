@@ -59,8 +59,8 @@ Fonts ship with the panel under the SIL Open Font License (`panel/static/OFL.txt
 ```
 
 - `lab-enter` is the only thing members may run as root. It creates or starts their container with the limits in `/etc/lab/users/<name>.conf`, then execs their shell, SFTP or command inside it.
-- `panel.py` serves the web UI and JSON API over HTTPS (self-signed by default). `lab-ctl` does the same operations from a shell.
-- `gateway.py` runs as an unprivileged user. It checks the person's key and quota, forwards the request to the engine, and records token usage in SQLite.
+- `panel.py` serves the web UI and JSON API over HTTPS, with a certificate from the server's own lab certificate (see Settings, Browser certificate). Plain `http://` on the panel port is redirected to `https://`. `lab-ctl` does the same operations from a shell.
+- `gateway.py` runs as an unprivileged user. It checks the person's key and quota, forwards the request to the engine, and records token usage in SQLite. It serves HTTPS with the panel's certificate; plain HTTP is accepted only from the server itself, which is how containers (on the host network) reach it at `http://127.0.0.1`; from elsewhere it gets an error rather than a redirect, so a key sent in the clear is noticed instead of silently followed. The Language model page shows a one-time setup command per system so curl, Python and Node.js trust the certificate. Set `"gateway_tls": false` in `/etc/lab/lab.json` for plain HTTP everywhere.
 - `engine.py` owns the single engine container: apply settings, roll back, pull versions.
 
 ## Requirements

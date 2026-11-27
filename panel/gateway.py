@@ -1,11 +1,18 @@
 #!/usr/bin/env python3
 """Lab LLM gateway: per-user API keys, daily token quotas, concurrency caps and usage logging
 in front of the local Strata server. OpenAI (chat, completions, responses) and Anthropic (messages)
-requests are passed through unchanged apart from the key. Python stdlib only; runs as user labgw."""
+requests are passed through unchanged apart from the key. Python stdlib only; runs as user labgw.
+
+HTTPS uses the panel's certificate (labtls.py), reloaded when it is renewed. The same port also takes plain HTTP
+from this server itself, where traffic never leaves the machine: people's containers share the host network
+and call http://127.0.0.1, so programs in them need no extra certificate."""
 import http.client
+import ipaddress
 import json
 import os
+import socket
 import sqlite3
+import ssl
 import sys
 import threading
 import time
@@ -14,6 +21,7 @@ from urllib.parse import urlsplit
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import labcore  # noqa: E402
+import labtls  # noqa: E402
 
 C = labcore.conf()
 BACKEND = ("127.0.0.1", int(C["strata_port"]))
@@ -332,13 +340,110 @@ class Handler(BaseHTTPRequestHandler):
                           status=status, stream=1 if stream else 0, ip=self.client_address[0])
 
 
+class TLS:
+    """The panel's certificate, loaded again when either file changes (renewal, a new address). If it cannot be
+    read, the old one stays in use; without any, only plain HTTP from this server is served."""
+    CHECK_S = 60
+
+    def __init__(self):
+        self.lock = threading.Lock()
+        self.ctx, self.loaded, self.checked = None, None, 0.0
+
+    def get(self):
+        now = time.monotonic()
+        if now - self.checked >= self.CHECK_S:
+            with self.lock:
+                if now - self.checked >= self.CHECK_S:
+                    self.checked = now
+                    self._load()
+        return self.ctx
+
+    def _load(self):
+        try:
+            stamp = tuple(os.stat(f).st_mtime_ns for f in (labtls.CRT, labtls.KEY))
+            if stamp == self.loaded:
+                return
+            ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+            ctx.minimum_version = ssl.TLSVersion.TLSv1_2
+            ctx.load_cert_chain(labtls.CRT, labtls.KEY)
+        except (OSError, ssl.SSLError) as e:            # e.g. caught between the new certificate and its key
+            print(f"certificate not loaded ({e}); {'keeping the previous one' if self.ctx else 'HTTPS is off until it is'}", flush=True)
+            return
+        self.ctx, self.loaded = ctx, stamp
+        print("certificate loaded", flush=True)
+
+
+def loopback(addr):
+    try:
+        ip = ipaddress.ip_address(addr.split("%")[0])
+    except ValueError:
+        return False
+    return ip.is_loopback or bool(getattr(ip, "ipv4_mapped", None) and ip.ipv4_mapped.is_loopback)
+
+
+PLAIN_REFUSED = "use https:// for this port: plain HTTP is accepted from this server only"
+
+
 class Server(ThreadingHTTPServer):
+    """With TLS on, each connection is TLS (first byte 0x16, a handshake) or, from this server only, plain HTTP.
+    Both are told apart and the handshake made in the connection's own thread, so a slow client blocks no one."""
     daemon_threads = True
     allow_reuse_address = True
     request_queue_size = 128
+    tls = None
+
+    def finish_request(self, request, client_address):
+        if self.tls is None:
+            return super().finish_request(request, client_address)
+        request.settimeout(20)
+        try:
+            first = request.recv(1, socket.MSG_PEEK)
+        except OSError:
+            return
+        if not first:
+            return
+        if first != b"\x16":
+            if loopback(client_address[0]):
+                return super().finish_request(request, client_address)
+            return self.refuse(request)
+        ctx = self.tls.get()
+        if ctx is None:
+            return
+        try:
+            conn = ctx.wrap_socket(request, server_side=True)
+        except (ssl.SSLError, OSError):
+            return
+        try:
+            self.RequestHandlerClass(conn, client_address, self)
+        finally:
+            try:
+                conn.close()
+            except OSError:
+                pass
+
+    @staticmethod
+    def refuse(request):
+        """A plain HTTP request from elsewhere: say how to reach the gateway instead of hanging up silently."""
+        body = json.dumps({"error": {"message": PLAIN_REFUSED, "type": "https_required"}}).encode()
+        try:
+            request.settimeout(2)
+            request.recv(65536)                          # read the request so closing does not reset the connection
+            request.sendall(b"HTTP/1.1 400 Bad Request\r\nContent-Type: application/json\r\nConnection: close\r\n"
+                            b"Content-Length: " + str(len(body)).encode() + b"\r\n\r\n" + body)
+        except OSError:
+            pass
+
+    def handle_error(self, request, client_address):
+        if isinstance(sys.exc_info()[1], (ssl.SSLError, ConnectionError, TimeoutError)):
+            return
+        super().handle_error(request, client_address)
 
 
 if __name__ == "__main__":
     srv = Server((C["gateway_listen"], int(C["gateway_port"])), Handler)
-    print(f"gateway on {C['gateway_listen']}:{C['gateway_port']} -> strata 127.0.0.1:{C['strata_port']}", flush=True)
+    if C.get("gateway_tls", True):
+        Server.tls = TLS()
+        Server.tls.get()
+    scheme = "https (plain http from this server)" if Server.tls else "http"
+    print(f"gateway on {scheme} {C['gateway_listen']}:{C['gateway_port']} -> strata 127.0.0.1:{C['strata_port']}", flush=True)
     srv.serve_forever()

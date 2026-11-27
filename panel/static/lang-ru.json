@@ -704,5 +704,19 @@
   "Whole call, prompt reading included": "Весь вызов, включая чтение запроса",
   "Listens on": "Слушает",
   "every network of this server; the firewall decides who gets in": "все сети этого сервера; кого пускать, решает брандмауэр",
-  "this server only; the gateway passes calls on to it, people cannot reach it directly": "только этот сервер; вызовы передаёт шлюз, напрямую к нему не подключиться"
+  "this server only; the gateway passes calls on to it, people cannot reach it directly": "только этот сервер; вызовы передаёт шлюз, напрямую к нему не подключиться",
+  "They use plain HTTP to 127.0.0.1, which never leaves this server.": "Они обращаются к 127.0.0.1 по обычному HTTP, и трафик не покидает сервер.",
+  "Setting up a computer for HTTPS": "Настройка компьютера для HTTPS",
+  "Same certificate as the panel. Set up each computer once, below.": "Тот же сертификат, что и у панели. Настройте каждый компьютер один раз, как описано ниже.",
+  "Paste into Terminal.": "Вставьте в Терминал.",
+  "Paste into a terminal (bash or zsh). No administrator rights needed.": "Вставьте в терминал (bash или zsh). Права администратора не нужны.",
+  "Paste into PowerShell and confirm the security prompt that asks to install the certificate. Python is set up if it is installed; run the command again after installing it later.": "Вставьте в PowerShell и подтвердите запрос безопасности об установке сертификата. Python настраивается, если он установлен; установив его позже, выполните команду ещё раз.",
+  "HTTPS from other computers": "HTTPS с других компьютеров",
+  "This server's certificate comes from an authority computers already trust, so programs need no setup.": "Сертификат этого сервера выдан центром, которому компьютеры уже доверяют, поэтому программам ничего настраивать не нужно.",
+  "Programs that call {url} must trust this server's lab certificate. Browsers use the computer's certificate list, but curl, Python and Node.js mostly keep their own. Run this once on each computer:": "Программы, обращающиеся к {url}, должны доверять сертификату лаборатории этого сервера. Браузеры используют список сертификатов компьютера, а curl, Python и Node.js обычно держат свой. Выполните один раз на каждом компьютере:",
+  "Then check it from a new terminal, with a key from People:": "Затем проверьте в новом окне терминала с ключом из раздела «Люди»:",
+  "The command downloads the lab certificate and keeps it only if its SHA-256 fingerprint matches the one this panel shows. It then sets {vars} for your account, so the OpenAI and Anthropic SDKs, requests, httpx, curl and Node.js tools such as Claude Code accept the address with no extra options. Public websites keep working: the bundle holds the system's usual list as well.": "Команда скачивает сертификат лаборатории и сохраняет его, только если отпечаток SHA-256 совпадает с показанным в панели. Затем она задаёт для вашей учётной записи {vars}, и SDK OpenAI и Anthropic, requests, httpx, curl и инструменты Node.js, например Claude Code, принимают адрес без дополнительных параметров. Публичные сайты работают как прежде: в пакете есть и обычный список системы.",
+  "In code you can also name the file directly: in Python {py}, or {curl} for a single curl call.": "В коде файл можно указать и напрямую: в Python {py}, а для одного вызова curl {curl}.",
+  "Copied.": "Скопировано.",
+  "The browser blocked copying; the command is selected, copy it with the keyboard.": "Браузер запретил копирование; команда выделена, скопируйте её с клавиатуры."
 }

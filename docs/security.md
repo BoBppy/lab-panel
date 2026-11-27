@@ -37,6 +37,7 @@ lab-panel is meant for a research group: people who are trusted not to attack ea
 ## Baseline for the host (`scripts/harden.sh`)
 
 - Firewall: SSH open; panel and gateway reachable only from private networks; everything else closed.
+- Gateway HTTPS: the gateway serves the panel's certificate, so its group (`labgw`) can read `/etc/lab/panel/tls.key` (mode 640); the lab certificate's own key stays root-only. Plain HTTP is answered only on loopback.
 - fail2ban on SSH, with growing ban times.
 - sshd: no root login, no X11 forwarding, 5 attempts per connection.
 - Automatic security updates, except the GPU driver, CUDA and Docker, which the panel lists for a planned restart.

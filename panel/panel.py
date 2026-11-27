@@ -9,6 +9,7 @@ import json
 import os
 import re
 import secrets
+import socket
 import ssl
 import subprocess
 import sys
@@ -364,6 +365,7 @@ def llm_payload():
     return {"strata": STATS.strata, "days": fill_days(days), "per_user": per_user, "recent": recent,
             "engine_port": int(C["strata_port"]),
             "gateway": {"port": C["gateway_port"], "listen": C["gateway_listen"], "model": L.conf()["model"],
+                        "tls": bool(C.get("gateway_tls", True)),
                         "active": sh(["systemctl", "is-active", "lab-llm-gateway"]).strip()}}
 
 
@@ -626,7 +628,7 @@ class Handler(BaseHTTPRequestHandler):
             return self.send(200, {"ok": True}, extra={"Set-Cookie": "rlsess=; Max-Age=0; Path=/; Secure"})
         if method == "GET" and parts == ["me"]:
             return self.send(200, {"user": admin, **L.brand(), "host": os.uname().nodename,
-                                   "gateway_port": C["gateway_port"], "model": L.conf()["model"], "ncpu": os.cpu_count(),
+                                   "gateway_port": C["gateway_port"], "gateway_tls": bool(C.get("gateway_tls", True)), "model": L.conf()["model"], "ncpu": os.cpu_count(),
                                    "home_bases": {d["homes"]: f"{d['label']} ({d['homes']})" for d in L.storage_view() if d.get("homes")}, "quota_fs": [fs for fs in L.QUOTA_FS if L.quotas_enabled(fs)],
                                    "default_quota_gb": L.conf().get("default_quota_gb", {}),
                                    "role": L.get_admin(admin)["role"], "two_factor": bool(L.get_admin(admin)["totp"]),
@@ -832,6 +834,9 @@ class Handler(BaseHTTPRequestHandler):
         return self.send(404, {"error": "no such endpoint"})
 
 
+HOST_RE = re.compile(r"(\[[0-9A-Fa-f:.]+\]|[A-Za-z0-9.-]+)(:\d{1,5})?")
+
+
 class Server(ThreadingHTTPServer):
     """TLS handshake happens in the per-connection thread, so a slow client cannot block accept()."""
     daemon_threads = True
@@ -841,6 +846,12 @@ class Server(ThreadingHTTPServer):
 
     def finish_request(self, request, client_address):
         request.settimeout(20)
+        try:
+            first = request.recv(1, socket.MSG_PEEK)
+        except OSError:
+            return
+        if first and first != b"\x16":          # not a TLS handshake: someone typed http://, send them to https://
+            return self.to_https(request)
         try:
             tls = self.ctx.wrap_socket(request, server_side=True)
         except (ssl.SSLError, OSError):
@@ -852,6 +863,32 @@ class Server(ThreadingHTTPServer):
                 tls.close()
             except OSError:
                 pass
+
+    @staticmethod
+    def to_https(request):
+        """Answer a plain HTTP request on this port with a permanent redirect to the same address over HTTPS."""
+        data = b""
+        try:
+            request.settimeout(5)
+            while b"\r\n\r\n" not in data and len(data) < 16384:
+                chunk = request.recv(4096)
+                if not chunk:
+                    break
+                data += chunk
+            head = data.split(b"\r\n\r\n", 1)[0].decode("latin-1").split("\r\n")
+            target = head[0].split(" ")[1] if len(head[0].split(" ")) >= 2 else "/"
+            host = next((l.split(":", 1)[1].strip() for l in head[1:] if l.lower().startswith("host:")), "")
+            if not HOST_RE.fullmatch(host):
+                a, port = request.getsockname()[:2]
+                host = (f"[{a}]" if ":" in a else a) + f":{port}"
+            if not target.startswith("/") or any(c in target for c in "\r\n\\") or target.startswith("//"):
+                target = "/"
+            loc = f"https://{host}{target[:2048]}"
+            body = f'<a href="{html.escape(loc)}">{html.escape(loc)}</a>\n'.encode()
+            request.sendall(f"HTTP/1.1 308 Permanent Redirect\r\nLocation: {loc}\r\nContent-Type: text/html\r\n"
+                            f"Content-Length: {len(body)}\r\nConnection: close\r\n\r\n".encode("latin-1") + body)
+        except (OSError, UnicodeError, IndexError):
+            pass
 
     def handle_error(self, request, client_address):
         # a client that hangs up mid-request (browser cancelling, port scanners) is not worth a traceback

@@ -37,6 +37,7 @@ DEFAULTS = {
     "subtitle": "",                   # line under the name in the sidebar; empty = "<hostname> server"
     "panel_listen": "0.0.0.0", "panel_port": 39743,
     "gateway_listen": "0.0.0.0", "gateway_port": 39700,
+    "gateway_tls": True,              # HTTPS with the panel's certificate; plain HTTP is then accepted from this server only
     "strata_port": 39701,
     "engine_page_port": 0,            # the engine's own web page, passed through by the panel on this port; 0 = off
     "model": "local",                 # model name people pass to the gateway; set by the engine page

@@ -8,9 +8,13 @@ and renews before it expires or when the server's addresses change, is trusted l
 
 A certificate someone put in place themselves (one not issued by the lab certificate, for example from Let's
 Encrypt for a real domain) is never replaced.
+
+The LLM gateway serves HTTPS with this same certificate, so the gateway's group may read its key (not the lab
+certificate's key, which stays with root).
 """
 import base64
 import datetime
+import grp
 import hashlib
 import ipaddress
 import json
@@ -24,6 +28,7 @@ DIR = "/etc/lab/panel"
 CA_CRT, CA_KEY = os.path.join(DIR, "ca.crt"), os.path.join(DIR, "ca.key")
 CRT, KEY = os.path.join(DIR, "tls.crt"), os.path.join(DIR, "tls.key")
 CONF = "/etc/lab/lab.json"
+KEY_GROUP = "labgw"      # the LLM gateway's user; it reads tls.crt and tls.key, never ca.key
 LEAF_DAYS = 397          # browsers and Apple systems refuse longer-lived server certificates
 RENEW_DAYS = 30
 
@@ -228,7 +233,20 @@ authorityKeyIdentifier = keyid
             with open(src, "rb") as a, open(tmp, "wb") as b:
                 b.write(a.read())
             os.chmod(tmp, mode)
+            if dst == KEY:
+                _share_key(tmp)
             os.replace(tmp, dst)
+
+
+def _share_key(path=KEY):
+    """Let the gateway's group read the key of the certificate it serves (also someone's own certificate)."""
+    try:
+        gid = grp.getgrnam(KEY_GROUP).gr_gid
+    except KeyError:
+        return
+    if os.path.isfile(path):
+        os.chown(path, 0, gid)
+        os.chmod(path, 0o640)
 
 
 def ensure(org="Lab"):
@@ -237,6 +255,7 @@ def ensure(org="Lab"):
     why = needs_new_leaf()
     if why:
         issue_leaf()
+    _share_key()
     return why
 
 

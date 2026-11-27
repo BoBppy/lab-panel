@@ -437,7 +437,7 @@ async function openUser(name, sub = "settings") {
     access: `<div class="part"><h3>${_("Password")}</h3><div class="inline"><input id="newPw" placeholder="${esc(_("new password, at least 8 characters"))}" autocomplete="new-password"><button class="btn sm" id="genPw2">${_("Generate")}</button><button id="setPw" class="btn primary">${_("Set password")}</button></div></div>
       <div class="part"><h3>${_("SSH keys")}</h3>${det.ssh_keys.length ? `<table><tbody>${det.ssh_keys.map((k) => `<tr><td>${esc(k.comment || _("no comment"))}</td><td class="sub">${esc(_("{type}, ends …{end}", { type: k.type, end: k.fingerprint }))}</td><td class="num"><button class="btn sm quiet-danger" data-rmkey="${k.index}">${_("Remove")}</button></td></tr>`).join("")}</tbody></table>` : `<p class="sub">${_("No keys yet.")}</p>`}
         <textarea id="newKey" rows="2" placeholder="ssh-ed25519 AAAA… name@laptop" aria-label="${esc(_("New SSH public key"))}"></textarea><div><button class="btn" id="addKey">${_("Add key")}</button></div></div>
-      <div class="part"><h3>${_("Language model key")}</h3><p class="sub">${_("Already set as {var} in {name}'s container. From a laptop on the lab network, use {url}.", { var: "<code>$OPENAI_API_KEY</code>", name: N, url: `<code>http://${esc(location.hostname)}:${ME.gateway_port}/v1</code>` })}</p>
+      <div class="part"><h3>${_("Language model key")}</h3><p class="sub">${_("Already set as {var} in {name}'s container. From a laptop on the lab network, use {url}.", { var: "<code>$OPENAI_API_KEY</code>", name: N, url: `<code>${ME.gateway_tls ? "https" : "http"}://${esc(location.hostname)}:${ME.gateway_port}/v1</code>` })}${ME.gateway_tls ? ` <a href="#" id="apiTlsLink">${_("Setting up a computer for HTTPS")}</a>` : ""}</p>
         <div class="inline"><code class="key" id="keyShow">${esc(u.key_prefix || "rl-")}…</code><button class="btn sm" id="showKey">${_("Show")}</button><button class="btn sm" id="copyKey">${_("Copy")}</button><button class="btn sm quiet-danger" id="regenKey">${_("Replace key")}</button></div></div>`,
     storage: `<div class="part"><dl class="kv"><dt>${_("Home folder")}</dt><dd>${_("{path} on {disk}", { path: `<code>${esc(u.home)}</code>`, disk: esc(diskName(FSN[u.home_fs] || u.home_fs)) })}</dd>
         <dt>${_("Data folders")}</dt><dd>${u.effective.DATA.length ? u.effective.DATA.map((r) => `<code>${esc(r)}/${N}</code>`).join(", ") : _("none")}</dd></dl></div>
@@ -495,6 +495,7 @@ async function openUser(name, sub = "settings") {
     let key = null;
     const getKey = async () => (key ||= (await api("GET", P + "/llm-key")).key);
     $("#showKey").addEventListener("click", async () => ($("#keyShow").textContent = await getKey()));
+    $("#apiTlsLink")?.addEventListener("click", (e) => { e.preventDefault(); dialog(`<div class="dlg-h"><div><h2>${_("Setting up a computer for HTTPS")}</h2></div>${closeX()}</div><div class="dlg-b">${apiTlsHTML(ME.gateway_port)}</div>`, "center"); });
     $("#copyKey").addEventListener("click", async () => { const k = await getKey(); try { await navigator.clipboard.writeText(k); toast(_("Key copied.")); } catch (e) { $("#keyShow").textContent = k; toast(_("The browser blocked copying, so the key is shown instead.")); } });
     $("#regenKey").addEventListener("click", async () => {
       if (!confirm(_("Replace {name}'s key? The old key stops working right away. New shells in their container pick up the new one.", { name }))) return;
@@ -572,14 +573,15 @@ async function loadLLM() {
   const cont = ov.containers.engine;
   $("#strataPill2").innerHTML = enginePill(d.strata, cont);
   $("#strataDetail").innerHTML = engineSummary(d.strata, cont) + (cont ? `<p class="hint" style="margin:12px 0 0">${esc(_("Holding {gpu} of GPU memory and {ram} of RAM. Container {status}.", { gpu: gb(cont.gpu_mib), ram: fmtB(cont.mem_anon), status: cont.status.toLowerCase() }))}</p>` : "");
-  const g = d.gateway, base = `http://${location.hostname}:${g.port}`;
+  const g = d.gateway, base = `${g.tls ? "https" : "http"}://${location.hostname}:${g.port}`;
   $("#gwBox").innerHTML = `<dl class="kv"><dt>${_("Gateway")}</dt><dd>${g.active === "active" ? `<span class="pill ok">${_("Running")}</span>` : `<span class="pill bad">${esc(g.active)}</span>`}</dd>
     <dt>${_("OpenAI style")}</dt><dd><code>${esc(base)}/v1</code></dd><dt>${_("Anthropic style")}</dt><dd><code>${esc(base)}</code></dd>
+    ${g.tls ? `<dt>HTTPS</dt><dd>${_("Same certificate as the panel. Set up each computer once, below.")}</dd>` : ""}
     <dt>${_("Listens on")}</dt><dd><code>${esc(g.listen === "0.0.0.0" ? "*" : g.listen)}:${esc(g.port)}</code> ${g.listen === "0.0.0.0" ? `<span class="sub">${_("every network of this server; the firewall decides who gets in")}</span>` : ""}</dd>
     <dt>${_("Engine")}</dt><dd><code>127.0.0.1:${esc(d.engine_port)}</code> <span class="sub">${_("this server only; the gateway passes calls on to it, people cannot reach it directly")}</span></dd>
     <dt>${_("Model name")}</dt><dd><code>${esc(g.model)}</code></dd>
     <dt>${_("Keys")}</dt><dd>${_("One per person, under People, Sign-in and keys. Daily limits and requests at once are set per person.")}</dd>
-    <dt>${_("In containers")}</dt><dd>${_("Already set up: {vars}, and the person's key.", { vars: "<code>$OPENAI_BASE_URL</code>, <code>$ANTHROPIC_BASE_URL</code>" })}</dd></dl>`;
+    <dt>${_("In containers")}</dt><dd>${_("Already set up: {vars}, and the person's key.", { vars: "<code>$OPENAI_BASE_URL</code>, <code>$ANTHROPIC_BASE_URL</code>" })}${g.tls ? ` <span class="sub">${_("They use plain HTTP to 127.0.0.1, which never leaves this server.")}</span>` : ""}</dd></dl>` + (g.tls ? apiTlsHTML(g.port) : "");
   loadEngPage().catch(() => {});
   if (!ENG_RENDERED) await loadEngine();
   else updateJobs(await api("GET", "jobs"));
@@ -785,6 +787,71 @@ function osGuess() {
   const u = navigator.userAgent;
   return /iPhone|iPad|iPod/.test(u) || (/Macintosh/.test(u) && navigator.maxTouchPoints > 1) ? "ios" : /Android/.test(u) ? "android" : /Mac/.test(u) ? "mac" : /Win/.test(u) ? "win" : "linux";
 }
+// ------------------------------------------------------------------ HTTPS for programs that call the gateway
+// Browsers use the system's certificate list; curl, Python and Node.js mostly do not. One command per system
+// saves the lab certificate (after checking its fingerprint), makes a bundle of the system's list plus it, and
+// points the usual variables there, so SDKs, scripts and tools such as Claude Code work with no options.
+function apiTlsCmds(port) {
+  const host = location.hostname, origin = location.origin, fp = BRAND.ca_sha256 || "", name = host.replace(/[^A-Za-z0-9.-]/g, "_");
+  const url = `https://${host.includes(":") ? `[${host}]` : host}:${port}`;
+  const unix = String.raw`(
+set -e
+d="$HOME/.config/lab"; f="$d/${name}.crt"; mkdir -p "$d"
+curl -fsSk ${origin}/lab-ca.crt -o "$f.new"
+fp=$(openssl x509 -in "$f.new" -noout -fingerprint -sha256 | cut -d= -f2)
+[ "$fp" = "${fp}" ] || { rm -f "$f.new"; echo "Fingerprint does not match the panel: certificate not saved."; exit 1; }
+mv "$f.new" "$f"
+for s in /etc/ssl/cert.pem /etc/ssl/certs/ca-certificates.crt /etc/pki/tls/certs/ca-bundle.crt; do [ -f "$s" ] && break; done
+cat "$d"/*.crt > "$d/extra.pem"; cat "$s" "$d/extra.pem" > "$d/bundle.pem"
+case "$SHELL" in *zsh) rc="$HOME/.zshrc" ;; *) rc="$HOME/.bashrc" ;; esac
+grep -qs 'config/lab/bundle.pem' "$rc" || echo 'export SSL_CERT_FILE="$HOME/.config/lab/bundle.pem" REQUESTS_CA_BUNDLE="$HOME/.config/lab/bundle.pem" CURL_CA_BUNDLE="$HOME/.config/lab/bundle.pem" NODE_EXTRA_CA_CERTS="$HOME/.config/lab/extra.pem"' >> "$rc"
+echo "Done. Open a new terminal window."
+)`;
+  const win = String.raw`$d = Join-Path $HOME ".lab"; $f = Join-Path $d "${name}.crt"; New-Item -ItemType Directory -Force $d | Out-Null
+curl.exe -fsSk ${origin}/lab-ca.crt -o "$f.new"
+$c = [Security.Cryptography.X509Certificates.X509Certificate2]::new("$f.new")
+$fp = [BitConverter]::ToString([Security.Cryptography.SHA256]::Create().ComputeHash($c.RawData)).Replace("-", ":")
+if ($fp -ne "${fp}") { Remove-Item "$f.new"; Write-Host "Fingerprint does not match the panel: certificate not saved." } else {
+  Move-Item -Force "$f.new" $f
+  Import-Certificate -FilePath $f -CertStoreLocation Cert:\CurrentUser\Root | Out-Null
+  $ca = Get-ChildItem "$d\*.crt" | ForEach-Object { Get-Content $_.FullName }
+  $ca | Set-Content -Encoding ascii "$d\extra.pem"
+  [Environment]::SetEnvironmentVariable("NODE_EXTRA_CA_CERTS", "$d\extra.pem", "User")
+  $base = try { python -m certifi 2>$null } catch { $null }
+  if ($base -and (Test-Path $base)) {
+    (Get-Content $base) + $ca | Set-Content -Encoding ascii "$d\bundle.pem"
+    [Environment]::SetEnvironmentVariable("SSL_CERT_FILE", "$d\bundle.pem", "User")
+    [Environment]::SetEnvironmentVariable("REQUESTS_CA_BUNDLE", "$d\bundle.pem", "User")
+  }
+  Write-Host "Done. Open a new terminal window."
+}`;
+  return {
+    url, steps: [
+      ["mac", "macOS", unix, _("Paste into Terminal."), `curl ${url}/v1/models -H "Authorization: Bearer YOUR_KEY"`],
+      ["linux", "Linux", unix, _("Paste into a terminal (bash or zsh). No administrator rights needed."), `curl ${url}/v1/models -H "Authorization: Bearer YOUR_KEY"`],
+      ["win", "Windows", win, _("Paste into PowerShell and confirm the security prompt that asks to install the certificate. Python is set up if it is installed; run the command again after installing it later."), `curl.exe --ssl-no-revoke ${url}/v1/models -H "Authorization: Bearer YOUR_KEY"`],
+    ],
+  };
+}
+function apiTlsHTML(port) {
+  if (!BRAND.lab_ca)
+    return `<div class="trust"><h3>${_("HTTPS from other computers")}</h3><p class="sub">${_("This server's certificate comes from an authority computers already trust, so programs need no setup.")}</p></div>`;
+  const { url, steps } = apiTlsCmds(port), os = osGuess();
+  const box = (cmd) => `<div class="cmdbox"><pre class="cmd">${esc(cmd)}</pre><button class="btn sm" data-copycmd>${_("Copy")}</button></div>`;
+  return `<div class="trust"><h3>${_("HTTPS from other computers")}</h3>
+    <p>${_("Programs that call {url} must trust this server's lab certificate. Browsers use the computer's certificate list, but curl, Python and Node.js mostly keep their own. Run this once on each computer:", { url: `<code>${esc(url)}</code>` })}</p>
+    <div class="trust-steps">${steps.map(([k, n, cmd, how, test]) => `<details ${k === os || (os !== "mac" && os !== "win" && k === "linux") ? "open" : ""}><summary>${n}</summary>
+      <p>${how}</p>${box(cmd)}<p>${_("Then check it from a new terminal, with a key from People:")}</p>${box(test)}</details>`).join("")}</div>
+    <p class="hint">${_("The command downloads the lab certificate and keeps it only if its SHA-256 fingerprint matches the one this panel shows. It then sets {vars} for your account, so the OpenAI and Anthropic SDKs, requests, httpx, curl and Node.js tools such as Claude Code accept the address with no extra options. Public websites keep working: the bundle holds the system's usual list as well.", { vars: "<code>SSL_CERT_FILE</code>, <code>REQUESTS_CA_BUNDLE</code>, <code>CURL_CA_BUNDLE</code>, <code>NODE_EXTRA_CA_CERTS</code>" })}</p>
+    <p class="hint">${_("In code you can also name the file directly: in Python {py}, or {curl} for a single curl call.", { py: "<code>httpx.Client(verify=\"…/lab.crt\")</code>", curl: "<code>curl --cacert …/lab.crt</code>" })}</p></div>`;
+}
+document.addEventListener("click", async (e) => {
+  const b = e.target.closest("[data-copycmd]");
+  if (!b) return;
+  const pre = b.parentElement.querySelector("pre");
+  try { await navigator.clipboard.writeText(pre.textContent); toast(_("Copied.")); }
+  catch (err) { getSelection().selectAllChildren(pre); toast(_("The browser blocked copying; the command is selected, copy it with the keyboard.")); }
+});
 function trustHTML(sha) {
   const steps = [
     ["mac", "macOS", _("Open the downloaded file; Keychain Access adds it. Double-click the certificate there, open Trust, set “When using this certificate” to “Always Trust”, then close the window and confirm with your password.")],
