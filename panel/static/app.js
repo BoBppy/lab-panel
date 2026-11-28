@@ -281,7 +281,7 @@ function engineSummary(st, cont) {
   }).join("");
   const last = (st.recent || []).filter((r) => r.decode_tok_s).slice(-1)[0];
   return `<dl class="kv"><dt>${_("Model")}</dt><dd>${esc(st.model)}</dd>
-    <dt>${_("Context")}</dt><dd>${_("{n} tokens per request", { n: fmtN(st.context) })}${st.kv ? esc(_(", {kv} cache", { kv: st.kv })) : ""}</dd>
+    <dt>${_("Context")}</dt><dd>${_("{n} tokens per request", { n: fmtN(st.context) })}${st.kv ? esc(_(", {kv} cache", { kv: st.kv })) : ""}${st.yarn ? `<br><span class="sub">${esc(_("Stretched {f}× with YaRN: the model was trained on {t} tokens.", { f: st.yarn, t: fmtN(st.trained_context) }))}</span>` : ""}</dd>
     <dt>${_("Engine")}</dt><dd>${st.engine === "custom" ? _("custom image") : esc(_("Strata engine {version}, {drafting} drafting", { version: st.engine, drafting: st.drafting }))}</dd>
     <dt>${_("Queue")}</dt><dd>${_("{n} answering, {m} waiting", { n: st.running || 0, m: st.waiting || 0 })}</dd>
     <dt>${_("Last answer")}</dt><dd>${last ? _("{speed} tokens/s over {n} tokens", { speed: last.decode_tok_s.toFixed(0), n: fmtN(last.output) }) : "–"}</dd></dl>${slots ? `<div class="slots">${slots}</div>` : ""}`;
@@ -580,6 +580,7 @@ async function loadLLM() {
     <dt>${_("Listens on")}</dt><dd><code>${esc(g.listen === "0.0.0.0" ? "*" : g.listen)}:${esc(g.port)}</code> ${g.listen === "0.0.0.0" ? `<span class="sub">${_("every network of this server; the firewall decides who gets in")}</span>` : ""}</dd>
     <dt>${_("Engine")}</dt><dd><code>127.0.0.1:${esc(d.engine_port)}</code> <span class="sub">${_("this server only; the gateway passes calls on to it, people cannot reach it directly")}</span></dd>
     <dt>${_("Model name")}</dt><dd><code>${esc(g.model)}</code></dd>
+    ${d.strata.context ? `<dt>${_("Context window")}</dt><dd>${_("{n} tokens per request, prompt and answer together. Give clients this number, for Codex {codex}.", { n: `<code>${d.strata.context}</code>`, codex: `<code>model_context_window = ${d.strata.context}</code>` })}</dd>` : ""}
     <dt>${_("Keys")}</dt><dd>${_("One per person, under People, Sign-in and keys. Daily limits and requests at once are set per person.")}</dd>
     <dt>${_("In containers")}</dt><dd>${_("Already set up: {vars}, and the person's key.", { vars: "<code>$OPENAI_BASE_URL</code>, <code>$ANTHROPIC_BASE_URL</code>" })}${g.tls ? ` <span class="sub">${_("They use plain HTTP to 127.0.0.1, which never leaves this server.")}</span>` : ""}</dd></dl>` + (g.tls ? apiTlsHTML(g.port) : "");
   loadEngPage().catch(() => {});
@@ -658,7 +659,7 @@ async function loadEngine(refreshVersions) {
       <label>${_("Size")}<input name="s:model" value="${esc(s.model)}"><span class="hint">${_("such as IQ3_S, IQ3_XXS or UD-Q4_K_XL")}</span></label>
       <div class="form-sec">${_("Capacity")}</div>
       <label>${_("Requests at once")}<input name="s:parallel" type="number" min="1" max="8" value="${s.parallel}"><span class="hint">${_("each needs GPU memory for its context; Strata reports what fits")}</span></label>
-      <label>${_("Context")}<select name="s:context">${opt(ch.context, s.context, { "32k": _("32k tokens"), "64k": _("64k tokens"), "128k": _("128k tokens"), "256k": _("256k tokens (the model's maximum)") })}</select></label>
+      <label>${_("Context")}<select name="s:context">${opt(ch.context, s.context, { "32k": _("32k tokens"), "64k": _("64k tokens"), "128k": _("128k tokens"), "256k": _("256k tokens, as trained"), "384k": _("384k tokens, stretched 1.5× (YaRN)"), "512k": _("512k tokens, stretched 2× (YaRN)"), "1m": _("1M tokens, stretched 4× (YaRN)") })}</select><span class="hint">${_("Past 256k Strata stretches the model's positions with YaRN, which changes answers slightly at every length. Each request keeps its whole context in GPU memory, taken from the expert cache.")}</span></label>
       <label>${_("Context memory format")}<select name="s:kv">${opt(ch.kv, s.kv, { int8: _("int8, the default"), q4_0: _("q4_0, half the memory"), k8v4: "k8v4", fp16: "fp16" })}</select></label>
       <label>${_("Pictures")}<select name="s:vision">${opt(ch.vision, s.vision, { off: _("Off"), gpu: _("On, read on the GPU"), cpu: _("On, read on the CPU") })}</select></label>
       <div class="form-sec">${_("Speed")}</div>

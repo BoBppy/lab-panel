@@ -43,7 +43,7 @@ DEFAULT = {
 }
 
 CHOICES = {
-    "context": ["32k", "64k", "128k", "256k"],
+    "context": ["32k", "64k", "128k", "256k", "384k", "512k", "1m"],   # past 256k Strata adds YaRN, factor = context / 256k
     "kv": ["int8", "q4_0", "k8v4", "fp16"],
     "vision": ["off", "gpu", "cpu"],
     "drafting": ["auto", "mtp", "dflash2", "off"],

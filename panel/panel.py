@@ -32,6 +32,7 @@ SESS = {}
 FAILS = {}
 LOCK = threading.Lock()
 NCPU = os.cpu_count()
+STRATA_TRAINED_CONTEXT = 262144     # positions Qwen3.8-Flash-Next was trained on; Strata adds YaRN past it
 
 
 def sh(cmd, timeout=20):
@@ -214,6 +215,10 @@ class Stats:
                    "slots": slots,
                    "tok_s": live.get("tok_s"), "model": eng.get("model"), "engine": eng.get("version"),
                    "context": eng.get("context"), "kv": eng.get("kv"), "drafting": eng.get("drafting"),
+                   # Strata stretches positions with YaRN past the 262,144 the model was trained on, by context / 262,144
+                   "trained_context": STRATA_TRAINED_CONTEXT,
+                   "yarn": round(eng["context"] / STRATA_TRAINED_CONTEXT, 2)
+                           if isinstance(eng.get("context"), int) and eng["context"] > STRATA_TRAINED_CONTEXT else None,
                    "recent": [{"time": r.get("time"), "prompt": r.get("prompt_tokens"), "output": r.get("output_tokens"),
                                "decode_tok_s": r.get("decode_tok_s"), "duration_s": r.get("duration_s"),
                                "finish": r.get("finish")} for r in reqs[-10:]]}
