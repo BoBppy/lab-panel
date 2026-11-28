@@ -31,7 +31,7 @@ MODELS_ROOT = C["models_root"].rstrip("/")
 DEFAULT = {
     "engine": "strata",
     "strata": {
-        "tag": "0.2.17-cuda13",
+        "tag": "0.2.23-cuda13",
         "model_dir": "",
         "family": "swift", "model": "IQ3_S",
         "context": "256k", "parallel": 4, "kv": "int8", "vision": "gpu", "drafting": "auto",
