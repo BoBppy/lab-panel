@@ -194,11 +194,24 @@ class Stats:
             con.close()
             live, eng = m.get("live", {}), m.get("engine", {})
             reqs = m.get("requests") or []
+            slots = [{"state": s.get("state"), "generated": s.get("generated"), "tok_s": s.get("tok_s"),
+                      "prompt_read": s.get("prompt_read"), "prompt_total": s.get("prompt_total") or s.get("prompt_tokens")}
+                     for s in (live.get("slots") or []) if isinstance(s, dict)]
+            # Strata runs a lone request on a single-stream fast path: it counts in running/outside_slots and
+            # the top-level live fields describe it, but every entry in slots[] stays "idle". Give each such
+            # request a free slot card so the cards add up to "running".
+            outside = live.get("outside_slots") or 0
+            alone = outside == 1 and live.get("running") == 1
+            for s in [s for s in slots if s["state"] in (None, "idle")][:outside]:
+                st = live.get("state") if alone else None
+                s["state"] = "reading" if st == "reading" else "decoding"
+                if alone:
+                    s.update(generated=live.get("generated"), tok_s=live.get("tok_s"),
+                             prompt_read=live.get("prompt_read"),
+                             prompt_total=live.get("prompt_total") or live.get("prompt_tokens"))
             out = {"reachable": True, "state": live.get("state"), "running": live.get("running"),
                    "waiting": (live.get("waiting") or 0) + (live.get("queued") or 0), "parallel": live.get("parallel"),
-                   "slots": [{"state": s.get("state"), "generated": s.get("generated"), "tok_s": s.get("tok_s"),
-                              "prompt_read": s.get("prompt_read"), "prompt_total": s.get("prompt_total")}
-                             for s in (live.get("slots") or []) if isinstance(s, dict)],
+                   "slots": slots,
                    "tok_s": live.get("tok_s"), "model": eng.get("model"), "engine": eng.get("version"),
                    "context": eng.get("context"), "kv": eng.get("kv"), "drafting": eng.get("drafting"),
                    "recent": [{"time": r.get("time"), "prompt": r.get("prompt_tokens"), "output": r.get("output_tokens"),
