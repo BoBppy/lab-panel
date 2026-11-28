@@ -788,24 +788,31 @@ function osGuess() {
   return /iPhone|iPad|iPod/.test(u) || (/Macintosh/.test(u) && navigator.maxTouchPoints > 1) ? "ios" : /Android/.test(u) ? "android" : /Mac/.test(u) ? "mac" : /Win/.test(u) ? "win" : "linux";
 }
 // ------------------------------------------------------------------ HTTPS for programs that call the gateway
-// Browsers use the system's certificate list; curl, Python and Node.js mostly do not. One command per system
-// saves the lab certificate (after checking its fingerprint), makes a bundle of the system's list plus it, and
-// points the usual variables there, so SDKs, scripts and tools such as Claude Code work with no options.
+// The lab certificate goes into each computer's own trusted list (Keychain, the Linux system store, the Windows
+// root store), so desktop apps such as Codex trust the gateway however they are started; settings made only in a
+// terminal never reach apps opened from the Dock or Start menu. A second, optional command covers Python and
+// Node.js tools, which keep their own list and ignore the system's.
 function apiTlsCmds(port) {
   const host = location.hostname, origin = location.origin, fp = BRAND.ca_sha256 || "", name = host.replace(/[^A-Za-z0-9.-]/g, "_");
   const url = `https://${host.includes(":") ? `[${host}]` : host}:${port}`;
-  const unix = String.raw`(
-set -e
-d="$HOME/.config/lab"; f="$d/${name}.crt"; mkdir -p "$d"
+  const fetchUnix = String.raw`d="$HOME/.config/lab"; f="$d/${name}.crt"; mkdir -p "$d"
 curl -fsSk ${origin}/lab-ca.crt -o "$f.new"
 fp=$(openssl x509 -in "$f.new" -noout -fingerprint -sha256 | cut -d= -f2)
 [ "$fp" = "${fp}" ] || { rm -f "$f.new"; echo "Fingerprint does not match the panel: certificate not saved."; exit 1; }
-mv "$f.new" "$f"
-for s in /etc/ssl/cert.pem /etc/ssl/certs/ca-certificates.crt /etc/pki/tls/certs/ca-bundle.crt; do [ -f "$s" ] && break; done
-cat "$d"/*.crt > "$d/extra.pem"; cat "$s" "$d/extra.pem" > "$d/bundle.pem"
-case "$SHELL" in *zsh) rc="$HOME/.zshrc" ;; *) rc="$HOME/.bashrc" ;; esac
-grep -qs 'config/lab/bundle.pem' "$rc" || echo 'export SSL_CERT_FILE="$HOME/.config/lab/bundle.pem" REQUESTS_CA_BUNDLE="$HOME/.config/lab/bundle.pem" CURL_CA_BUNDLE="$HOME/.config/lab/bundle.pem" NODE_EXTRA_CA_CERTS="$HOME/.config/lab/extra.pem"' >> "$rc"
-echo "Done. Open a new terminal window."
+mv "$f.new" "$f"`;
+  const mac = String.raw`(
+set -e
+${fetchUnix}
+security add-trusted-cert -r trustRoot -k "$HOME/Library/Keychains/login.keychain-db" "$f"
+echo "Done. Quit and reopen apps that were already running."
+)`;
+  const linux = String.raw`(
+set -e
+${fetchUnix}
+if command -v update-ca-certificates >/dev/null; then sudo install -m 644 "$f" "/usr/local/share/ca-certificates/lab-${name}.crt"; sudo update-ca-certificates
+elif command -v update-ca-trust >/dev/null; then sudo install -m 644 "$f" "/etc/pki/ca-trust/source/anchors/lab-${name}.crt"; sudo update-ca-trust
+else echo "Neither update-ca-certificates nor update-ca-trust was found: add $f to this system's trusted certificates by hand."; exit 1; fi
+echo "Done. Quit and reopen apps that were already running."
 )`;
   const win = String.raw`$d = Join-Path $HOME ".lab"; $f = Join-Path $d "${name}.crt"; New-Item -ItemType Directory -Force $d | Out-Null
 curl.exe -fsSk ${origin}/lab-ca.crt -o "$f.new"
@@ -814,6 +821,20 @@ $fp = [BitConverter]::ToString([Security.Cryptography.SHA256]::Create().ComputeH
 if ($fp -ne "${fp}") { Remove-Item "$f.new"; Write-Host "Fingerprint does not match the panel: certificate not saved." } else {
   Move-Item -Force "$f.new" $f
   Import-Certificate -FilePath $f -CertStoreLocation Cert:\CurrentUser\Root | Out-Null
+  Write-Host "Done. Quit and reopen apps that were already running."
+}`;
+  const toolsUnix = String.raw`(
+set -e
+d="$HOME/.config/lab"
+[ -f "$d/${name}.crt" ] || { echo "Run the first command first."; exit 1; }
+for s in /etc/ssl/cert.pem /etc/ssl/certs/ca-certificates.crt /etc/pki/tls/certs/ca-bundle.crt; do [ -f "$s" ] && break; done
+cat "$d"/*.crt > "$d/extra.pem"; cat "$s" "$d/extra.pem" > "$d/bundle.pem"
+case "$SHELL" in *zsh) rc="$HOME/.zshrc" ;; *) rc="$HOME/.bashrc" ;; esac
+grep -qs 'config/lab/bundle.pem' "$rc" || echo 'export SSL_CERT_FILE="$HOME/.config/lab/bundle.pem" REQUESTS_CA_BUNDLE="$HOME/.config/lab/bundle.pem" CURL_CA_BUNDLE="$HOME/.config/lab/bundle.pem" NODE_EXTRA_CA_CERTS="$HOME/.config/lab/extra.pem"' >> "$rc"
+echo "Done. Open a new terminal window."
+)`;
+  const toolsWin = String.raw`$d = Join-Path $HOME ".lab"
+if (-not (Test-Path (Join-Path $d "${name}.crt"))) { Write-Host "Run the first command first." } else {
   $ca = Get-ChildItem "$d\*.crt" | ForEach-Object { Get-Content $_.FullName }
   $ca | Set-Content -Encoding ascii "$d\extra.pem"
   [Environment]::SetEnvironmentVariable("NODE_EXTRA_CA_CERTS", "$d\extra.pem", "User")
@@ -825,11 +846,12 @@ if ($fp -ne "${fp}") { Remove-Item "$f.new"; Write-Host "Fingerprint does not ma
   }
   Write-Host "Done. Open a new terminal window."
 }`;
+  const test = `curl ${url}/v1/models -H "Authorization: Bearer YOUR_KEY"`;
   return {
     url, steps: [
-      ["mac", "macOS", unix, _("Paste into Terminal."), `curl ${url}/v1/models -H "Authorization: Bearer YOUR_KEY"`],
-      ["linux", "Linux", unix, _("Paste into a terminal (bash or zsh). No administrator rights needed."), `curl ${url}/v1/models -H "Authorization: Bearer YOUR_KEY"`],
-      ["win", "Windows", win, _("Paste into PowerShell and confirm the security prompt that asks to install the certificate. Python is set up if it is installed; run the command again after installing it later."), `curl.exe --ssl-no-revoke ${url}/v1/models -H "Authorization: Bearer YOUR_KEY"`],
+      ["mac", "macOS", mac, _("Paste into Terminal. macOS asks for your password once and adds the certificate to your login keychain, which every app you open uses."), test, toolsUnix],
+      ["linux", "Linux", linux, _("Paste into a terminal (bash or zsh). It asks for your password to add the certificate to the system's trusted certificates."), test, toolsUnix],
+      ["win", "Windows", win, _("Paste into PowerShell and confirm the security prompt that asks to install the certificate."), `curl.exe --ssl-no-revoke ${url}/v1/models -H "Authorization: Bearer YOUR_KEY"`, toolsWin],
     ],
   };
 }
@@ -838,11 +860,13 @@ function apiTlsHTML(port) {
     return `<div class="trust"><h3>${_("HTTPS from other computers")}</h3><p class="sub">${_("This server's certificate comes from an authority computers already trust, so programs need no setup.")}</p></div>`;
   const { url, steps } = apiTlsCmds(port), os = osGuess();
   const box = (cmd) => `<div class="cmdbox"><pre class="cmd">${esc(cmd)}</pre><button class="btn sm" data-copycmd>${_("Copy")}</button></div>`;
+  const vars = "<code>SSL_CERT_FILE</code>, <code>REQUESTS_CA_BUNDLE</code>, <code>CURL_CA_BUNDLE</code>, <code>NODE_EXTRA_CA_CERTS</code>";
   return `<div class="trust"><h3>${_("HTTPS from other computers")}</h3>
-    <p>${_("Programs that call {url} must trust this server's lab certificate. Browsers use the computer's certificate list, but curl, Python and Node.js mostly keep their own. Run this once on each computer:", { url: `<code>${esc(url)}</code>` })}</p>
-    <div class="trust-steps">${steps.map(([k, n, cmd, how, test]) => `<details ${k === os || (os !== "mac" && os !== "win" && k === "linux") ? "open" : ""}><summary>${n}</summary>
-      <p>${how}</p>${box(cmd)}<p>${_("Then check it from a new terminal, with a key from People:")}</p>${box(test)}</details>`).join("")}</div>
-    <p class="hint">${_("The command downloads the lab certificate and keeps it only if its SHA-256 fingerprint matches the one this panel shows. It then sets {vars} for your account, so the OpenAI and Anthropic SDKs, requests, httpx, curl and Node.js tools such as Claude Code accept the address with no extra options. Public websites keep working: the bundle holds the system's usual list as well.", { vars: "<code>SSL_CERT_FILE</code>, <code>REQUESTS_CA_BUNDLE</code>, <code>CURL_CA_BUNDLE</code>, <code>NODE_EXTRA_CA_CERTS</code>" })}</p>
+    <p>${_("Programs that call {url} must trust this server's lab certificate. Add it to each computer's trusted certificates once. Setting it up only in a terminal is not enough: apps opened from the Dock, the Start menu or a desktop launcher never see terminal settings.", { url: `<code>${esc(url)}</code>` })}</p>
+    <div class="trust-steps">${steps.map(([k, n, cmd, how, test, tools]) => `<details ${k === os || (os !== "mac" && os !== "win" && k === "linux") ? "open" : ""}><summary>${n}</summary>
+      <p>${how}</p>${box(cmd)}<p>${_("Then check it with a key from People:")}</p>${box(test)}
+      <p>${_("Only if you use Python or Node.js tools from a terminal: these keep their own certificate list and ignore the computer's. This sets {vars} for your account so they accept the address too.", { vars })}</p>${box(tools)}</details>`).join("")}</div>
+    <p class="hint">${_("The first command downloads the lab certificate, keeps it only if its SHA-256 fingerprint matches the one this panel shows, and adds it to the computer's trusted certificates. Desktop apps such as Codex and Cursor, curl and most other programs then accept the address, however they are started. Public websites are not affected: the lab certificate can only vouch for local addresses and names.")}</p>
     <p class="hint">${_("In code you can also name the file directly: in Python {py}, or {curl} for a single curl call.", { py: "<code>httpx.Client(verify=\"…/lab.crt\")</code>", curl: "<code>curl --cacert …/lab.crt</code>" })}</p></div>`;
 }
 document.addEventListener("click", async (e) => {
